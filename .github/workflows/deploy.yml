@@ -7,7 +7,7 @@ on:
 
 jobs:
   deploy:
-    runs-on: [ self-hosted, vistec-intranet ]
+    runs-on: self-hosted
 
     steps:
       - name: Checkout Repository
