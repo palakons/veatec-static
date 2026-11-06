@@ -13,28 +13,12 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Verify Secrets
-        run: |
-          if [ -z "${{ secrets.SFTP_HOST }}" ]; then
-            echo "Error: SFTP_HOST is not set" && exit 1
-          fi
-          echo "SFTP Host is set."
-
-      - name: Sync Test File to VISTEC SFTP
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+      - name: Deploy Test File via SFTP SSH Key
+        uses: wlixcc/SFTP-Deploy-Action@v1.2.4
         with:
           server: ${{ secrets.SFTP_HOST }}
           username: ${{ secrets.SFTP_USERNAME }}
-          ssh-key: ${{ secrets.SFTP_SSH_KEY }}
+          ssh_private_key: ${{ secrets.SFTP_SSH_KEY }}
           port: 22
-          protocol: sftp
-          local-dir: ./
-          server-dir: ${{ secrets.SFTP_REMOTE_DIR }}
-          dangerous-clean-slate: false
-          exclude: |
-            **/.git*
-            **/.git*/**
-            **/node_modules/**
-            src/**
-            public/**
-            .*
+          local_path: './test-sftp.html'
+          remote_path: ${{ secrets.SFTP_REMOTE_DIR }}
