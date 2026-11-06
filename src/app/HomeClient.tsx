@@ -1,3 +1,4 @@
+import { getClientDeliveryLocations, getClientShops, getClientBatches } from "@/lib/client-api";
 "use client";
 
 import { useEffect, useState, useRef, useMemo, useCallback } from "react";
@@ -637,15 +638,14 @@ export default function HomeClient({ initialBatches, initialLocations }: Props) 
 
   const fetchLocations = async () => {
     try {
-      const res = await fetch("/api/locations");
-      const data = await res.json();
-      if (data.success && Array.isArray(data.locations) && data.locations.length > 0) {
-        setLocations(data.locations);
-        setRuntimeLocations(data.locations);
+      const locs = await getClientDeliveryLocations();
+      if (Array.isArray(locs) && locs.length > 0) {
+        setLocations(locs);
+        setRuntimeLocations(locs);
         setOpenBuildingId((curr) => {
-          const match = data.locations.find((l: any) => l.id === curr && l.isActive !== false);
+          const match = locs.find((l: any) => l.id === curr && l.isActive !== false);
           if (match) return curr;
-          const active = data.locations.find((l: any) => l.isActive !== false) || data.locations.find((l: any) => l.id === "loc-m4");
+          const active = locs.find((l: any) => l.isActive !== false) || locs.find((l: any) => l.id === "loc-m4");
           return active?.id || curr;
         });
       }
@@ -695,32 +695,22 @@ export default function HomeClient({ initialBatches, initialLocations }: Props) 
   const fetchBatches = async (fresh = false) => {
     try {
       if (fresh) setIsRefreshing(true);
-      // role=shop returns unsanitized batches for manifest generation; fresh=true bypasses server cache
-      const url = fresh ? "/api/batches?role=shop&fresh=true" : "/api/batches?role=shop";
-      const [resBatches, resLocs] = await Promise.all([
-        fetch(url),
-        fetch("/api/locations").catch(() => null),
+      const [batchesList, locs] = await Promise.all([
+        getClientBatches(),
+        getClientDeliveryLocations(),
       ]);
-      const data = await resBatches.json();
-      if (data.success && Array.isArray(data.batches)) {
-        setBatches(data.batches);
-        try {
-          localStorage.setItem("veatec_cached_batches", JSON.stringify(data.batches));
-        } catch (e) {}
-        const now = new Date();
-        setLastRefreshedAt(
-          now.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
-        );
+      setBatches(batchesList);
+      if (locs && locs.length > 0) {
+        setLocations(locs);
+        setRuntimeLocations(locs);
       }
-      if (resLocs) {
-        try {
-          const locsData = await resLocs.json();
-          if (locsData.success && Array.isArray(locsData.locations) && locsData.locations.length > 0) {
-            setLocations(locsData.locations);
-            setRuntimeLocations(locsData.locations);
-          }
-        } catch (e) {}
-      }
+      try {
+        localStorage.setItem("veatec_cached_batches", JSON.stringify(batchesList));
+      } catch (e) {}
+      const now = new Date();
+      setLastRefreshedAt(
+        now.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+      );
     } catch (err) {
       console.warn("Fetch batches error:", err);
     } finally {
@@ -732,13 +722,12 @@ export default function HomeClient({ initialBatches, initialLocations }: Props) 
 
   const fetchShops = async () => {
     try {
-      const res = await fetch("/api/shops");
-      const data = await res.json();
-      if (data.success && Array.isArray(data.shops)) {
-        setAvailableShops(data.shops);
-        if (data.shops.length > 0 && !openShopId) {
+      const shops = await getClientShops();
+      if (Array.isArray(shops) && shops.length > 0) {
+        setAvailableShops(shops);
+        if (!openShopId) {
           const bkkDay = getBangkokDayOfWeek();
-          const firstOpen = data.shops.find((s: Shop) => isShopOpenOnDay(s, bkkDay)) || data.shops[0];
+          const firstOpen = shops.find((s: Shop) => isShopOpenOnDay(s, bkkDay)) || shops[0];
           setOpenShopId(firstOpen.id);
           setOpenTargetMin(String(firstOpen.minDeliveryAmount || 200));
         }
