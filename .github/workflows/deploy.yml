@@ -1,4 +1,4 @@
-name: Test Deploy to VISTEC SFTP
+name: Deploy to VISTEC SFTP
 
 on:
   push:
@@ -7,18 +7,17 @@ on:
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest
+    runs-on: [ self-hosted, vistec-intranet ]
 
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Deploy Test File via SFTP SSH Key
-        uses: wlixcc/SFTP-Deploy-Action@v1.2.4
-        with:
-          server: ${{ secrets.SFTP_HOST }}
-          username: ${{ secrets.SFTP_USERNAME }}
-          ssh_private_key: ${{ secrets.SFTP_SSH_KEY }}
-          port: 22
-          local_path: './test-sftp.html'
-          remote_path: ${{ secrets.SFTP_REMOTE_DIR }}
+      - name: Deploy Test File via SFTP
+        run: |
+          sftp -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no veatec@10.204.15.164 << 'EOF'
+          cd veatec
+          put test-sftp.html
+          quit
+          EOF
+          echo "Deployment to 10.204.15.164:/veatec/ succeeded!"
