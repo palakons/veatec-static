@@ -1,41 +1,23 @@
-import { Suspense } from "react";
-import { connection } from "next/server";
-import { getBatches, getShops, getDeliveryLocations, getSystemStatus } from "@/lib/store";
-import AdminClient from "./AdminClient";
+"use client";
 
-async function AdminDataLoader() {
-  await connection();
-  try {
-    const [batches, shops, locations, systemStatus] = await Promise.all([
-      getBatches(false, true),
-      getShops(),
-      getDeliveryLocations(),
-      getSystemStatus(),
-    ]);
-    return (
-      <AdminClient
-        initialBatches={batches}
-        initialShops={shops}
-        initialLocations={locations}
-        initialSystemStatus={systemStatus}
-      />
-    );
-  } catch (err) {
-    console.error("AdminDataLoader error:", err);
-    return <AdminClient initialBatches={[]} initialShops={[]} initialLocations={[]} />;
-  }
-}
+import dynamic from "next/dynamic";
+
+const AdminClient = dynamic(() => import("./AdminClient"), {
+  ssr: false,
+  loading: () => (
+    <div className="min-h-screen bg-gray-50 flex items-center justify-center text-gray-500 font-medium">
+      กำลังโหลดข้อมูล VEATEC Hub...
+    </div>
+  ),
+});
 
 export default function AdminPage() {
   return (
-    <Suspense
-      fallback={
-        <div className="min-h-screen bg-gray-50 flex items-center justify-center text-gray-500 font-medium">
-          กำลังโหลดข้อมูล VEATEC Hub...
-        </div>
-      }
-    >
-      <AdminDataLoader />
-    </Suspense>
+    <AdminClient
+      initialBatches={[]}
+      initialShops={[]}
+      initialLocations={[]}
+      initialSystemStatus={undefined}
+    />
   );
 }

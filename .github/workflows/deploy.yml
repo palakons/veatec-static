@@ -1,4 +1,4 @@
-name: Deploy to VISTEC SFTP
+name: Deploy Static Web to VISTEC SFTP
 
 on:
   push:
@@ -13,11 +13,23 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Deploy Test File via SFTP
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Build Next.js Static Export
+        run: npm run build
+
+      - name: Sync Static Files to VISTEC SFTP
         run: |
           sftp -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no veatec@10.204.15.164 << 'EOF'
           cd veatec
-          put test-sftp.html
+          put -r out/* .
           quit
           EOF
-          echo "Deployment to 10.204.15.164:/veatec/ succeeded!"
+          echo "Deployment of Static Build to https://ist.vistec.ac.th/veatec/ succeeded!"

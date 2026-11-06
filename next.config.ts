@@ -11,46 +11,15 @@ try {
 }
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  output: "export",
+  basePath: "/veatec",
+  images: {
+    unoptimized: true,
+  },
   env: {
     NEXT_PUBLIC_GIT_COMMIT: gitCommit,
     NEXT_PUBLIC_BUILD_TIME: gitCommitDate || new Date().toISOString(),
-  },
-  allowedDevOrigins: ["v9", "*.v9", "localhost", "127.0.0.1", "*.google.internal", "*.cloud.google.com"],
-  cacheComponents: true,
-  partialPrefetching: true,
-  experimental: {
-    agentUpgrade: "security",
-  },
-  turbopack: {
-    rules: {
-      "*.css": {
-        loaders: ["@tailwindcss/turbopack"],
-        as: "*.css",
-      },
-    },
-  },
-  async headers() {
-    return [
-      {
-        source: "/:all*(svg|jpg|png|webp|ico)",
-        headers: [
-          {
-            key: "Cache-Control",
-            value: "public, max-age=31536000, immutable",
-          },
-        ],
-      },
-    ];
-  },
-  async redirects() {
-    return [
-      {
-        source: "/leader/:id",
-        destination: "/order/:id/leader",
-        permanent: false,
-      },
-    ];
+    NEXT_PUBLIC_BASE_PATH: "/veatec",
   },
 };
 
