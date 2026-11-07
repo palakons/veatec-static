@@ -16,6 +16,14 @@ const nextConfig: NextConfig = {
   images: {
     unoptimized: true,
   },
+  turbopack: {
+    rules: {
+      "*.css": {
+        loaders: ["@tailwindcss/turbopack"],
+        as: "*.css",
+      },
+    },
+  },
   env: {
     NEXT_PUBLIC_GIT_COMMIT: gitCommit,
     NEXT_PUBLIC_BUILD_TIME: gitCommitDate || new Date().toISOString(),
