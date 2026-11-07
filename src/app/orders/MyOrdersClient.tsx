@@ -1,5 +1,7 @@
 "use client";
 
+import { db } from "@/lib/firebase";
+import { collection, getDocs } from "firebase/firestore";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
@@ -78,10 +80,13 @@ export default function MyOrdersClient() {
 
     try {
       setRefreshing(true);
-      const res = await fetch(`/api/orders?phone=${encodeURIComponent(cleanPhone)}`);
-      const data = await res.json();
-      if (data.success && Array.isArray(data.orders) && data.orders.length > 0) {
-        const foundOrders: LocalOrder[] = data.orders.map((o: any) => ({
+      let foundOrders: LocalOrder[] = [];
+      if (db) {
+        const snap = await getDocs(collection(db, "orders"));
+        foundOrders = snap.docs
+          .map(d => d.data() as any)
+          .filter(o => !o.deletedAt && (o.customerPhone || "").replace(/\D/g, "").includes(cleanPhone))
+          .map((o: any) => ({
           orderId: o.orderId,
           batchId: o.batchId,
           shopName: o.shopName,

@@ -16,20 +16,8 @@ export default function VersionBadge() {
     // Only query backend version ONCE on initial page load / refresh
     const checkVersion = async () => {
       try {
-        const res = await fetch("/api/version");
-        if (!res.ok) return;
-        const data = await res.json();
-        if (data.commitHash) {
-          setServerCommit(data.commitHash);
-          // If server commit is known and differs from client bundle commit
-          if (
-            clientCommit !== "dev" &&
-            data.commitHash !== "unknown" &&
-            data.commitHash !== clientCommit
-          ) {
-            setHasNewVersion(true);
-          }
-        }
+        // Static mode: version is derived from client commit
+        setServerCommit(clientCommit);
       } catch {
         // network or offline
       }

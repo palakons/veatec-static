@@ -1,5 +1,6 @@
 "use client";
 
+import { deleteClientOrder } from "@/lib/client-order-service";
 import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -435,15 +436,12 @@ export default function LeaderPageClient({ batchId, initialBatch }: Props) {
     }
 
     try {
-      const res = await fetch(`/api/orders?id=${orderId}&reason=Cancelled by Leader&by=${encodeURIComponent(batch?.hostName || "Leader")}`, {
-        method: "DELETE",
-      });
-      const data = await res.json();
-      if (data.success) {
+      const ok = await deleteClientOrder(orderId, "Cancelled by Leader", batch?.hostName || "Leader");
+      if (ok) {
         alert("ยกเลิกรายการเรียบร้อยแล้ว");
         await fetchBatch();
       } else {
-        alert(data.error || "ไม่สามารถยกเลิกได้");
+        alert("ไม่สามารถยกเลิกได้");
       }
     } catch (err) {
       alert("เกิดข้อผิดพลาดในการยกเลิก");

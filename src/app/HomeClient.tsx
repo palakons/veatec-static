@@ -1,6 +1,7 @@
-import { getClientDeliveryLocations, getClientShops, getClientBatches } from "@/lib/client-api";
 "use client";
 
+import { createClientOrder, deleteClientOrder } from "@/lib/client-order-service";
+import { getClientDeliveryLocations, getClientShops, getClientBatches } from "@/lib/client-api";
 import { useEffect, useState, useRef, useMemo, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -783,23 +784,9 @@ export default function HomeClient({ initialBatches, initialLocations }: Props) 
     }
 
     setSyncingGoogleHours(true);
-    try {
-      const res = await fetch(`/api/shops/${selectedShopId}/sync-hours`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ force: false }),
-      });
-      const data = await res.json();
-      if (data.success && data.shop) {
-        setAvailableShops((prev) =>
-          prev.map((s) => (s.id === selectedShopId ? { ...s, ...data.shop } : s))
-        );
-      }
-    } catch (e) {
-      console.warn("Google Maps sync error:", e);
-    } finally {
-      setSyncingGoogleHours(false);
-    }
+    // Static mode: skip background API call to avoid 404
+    setSyncingGoogleHours(false);
+    return;
   };
 
   const handleCreateBoard = async (e: React.FormEvent) => {
@@ -1136,10 +1123,9 @@ export default function HomeClient({ initialBatches, initialLocations }: Props) 
         }
       }
 
-      const res = await fetch("/api/orders", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      let createdOrder: Order;
+      try {
+        createdOrder = await createClientOrder({
           batchId: activeBatch.id,
           customerName: cleanLine,
           customerLineId: cleanLine,
@@ -1159,13 +1145,11 @@ export default function HomeClient({ initialBatches, initialLocations }: Props) 
           slipBankCode: slipVerification?.bankCode,
           slipBankName: slipVerification?.bankName,
           isSlipVerified: slipVerification?.isValid || false,
-        }),
-      });
-
-      const data = await res.json();
-      if (!data.success) {
-        throw new Error(data.error || "เกิดข้อผิดพลาดในการลงชื่อ");
+        });
+      } catch (err: any) {
+        throw new Error(err?.message || "เกิดข้อผิดพลาดในการลงชื่อ");
       }
+      const data = { success: true, order: createdOrder };
 
       try {
         localStorage.setItem("veatec_user_line", cleanLine);
@@ -1231,15 +1215,12 @@ export default function HomeClient({ initialBatches, initialLocations }: Props) 
     }
 
     try {
-      const res = await fetch(`/api/orders?id=${orderId}&reason=Cancelled by Host&by=${encodeURIComponent(customerLineId || "Host")}`, {
-        method: "DELETE",
-      });
-      const data = await res.json();
-      if (data.success) {
+      const ok = await deleteClientOrder(orderId, "Cancelled by Host", customerLineId || "Host");
+      if (ok) {
         alert("ยกเลิกรายการเรียบร้อยแล้ว");
         fetchBatches();
       } else {
-        alert(data.error || "ไม่สามารถยกเลิกได้");
+        alert("ไม่สามารถยกเลิกได้");
       }
     } catch (err) {
       alert("เกิดข้อผิดพลาดในการยกเลิก");

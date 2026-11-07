@@ -13,6 +13,7 @@ try {
 const nextConfig: NextConfig = {
   output: "export",
   basePath: "/veatec",
+  trailingSlash: true,
   images: {
     unoptimized: true,
   },
