@@ -667,6 +667,7 @@ export default function AdminClient({
       const isAuth = sessionStorage.getItem("veatec_admin_auth");
       if (isAuth === "true") {
         setIsAuthenticated(true);
+        refreshData();
         fetchSuggestions();
         fetchLocations();
         fetchLineStatus();
@@ -818,11 +819,9 @@ export default function AdminClient({
 
   const fetchLocations = async (fresh = false) => {
     try {
-      const url = fresh ? "/api/locations?fresh=true" : "/api/locations";
-      const res = await fetch(url, { cache: fresh ? "no-store" : "default" });
-      const data = await res.json();
-      if (data.success && data.locations) {
-        setLocations(data.locations);
+      const locs = await getClientDeliveryLocations();
+      if (Array.isArray(locs) && locs.length > 0) {
+        setLocations(locs);
       }
     } catch (e) {
       console.warn("Error fetching locations:", e);
@@ -962,6 +961,7 @@ export default function AdminClient({
       } catch (err) {}
       setIsAuthenticated(true);
       setPassError(false);
+      refreshData();
       fetchSuggestions();
       fetchLocations();
       fetchLineStatus();
