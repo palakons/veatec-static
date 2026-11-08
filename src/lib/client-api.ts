@@ -130,3 +130,15 @@ export async function getClientBatchById(id: string): Promise<BatchWithDetails |
   }
   return null;
 }
+
+export async function getClientSuggestions(): Promise<any[]> {
+  if (isFirebaseConfigured && db) {
+    try {
+      const snap = await getDocs(collection(db, "suggestions"));
+      return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    } catch (err) {
+      console.warn("getClientSuggestions error:", err);
+    }
+  }
+  return [];
+}

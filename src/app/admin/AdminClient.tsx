@@ -1,6 +1,7 @@
-import { resolveImageUrl } from "@/lib/image-url";
 "use client";
 
+import { getClientBatches, getClientShops, getClientDeliveryLocations, getClientSuggestions } from "@/lib/client-api";
+import { resolveImageUrl } from "@/lib/image-url";
 import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import {
@@ -806,11 +807,8 @@ export default function AdminClient({
   const fetchSuggestions = async () => {
     try {
       setLoadingSuggestions(true);
-      const res = await fetch("/api/suggestions");
-      const data = await res.json();
-      if (data.success) {
-        setSuggestions(data.suggestions);
-      }
+      const data = await getClientSuggestions();
+      setSuggestions(data);
     } catch (e) {
       console.error("Error fetching suggestions:", e);
     } finally {
@@ -982,18 +980,14 @@ export default function AdminClient({
 
   const refreshData = async () => {
     try {
-      const [batchesRes, shopsRes, locsRes] = await Promise.all([
-        fetch("/api/batches?role=host&fresh=true"),
-        fetch("/api/shops"),
-        fetch("/api/locations"),
+      const [batchesData, shopsData, locsData] = await Promise.all([
+        getClientBatches(),
+        getClientShops(),
+        getClientDeliveryLocations(),
       ]);
-      const batchesData = await batchesRes.json();
-      const shopsData = await shopsRes.json();
-      const locsData = await locsRes.json();
-
-      if (batchesData.success) setBatches(batchesData.batches);
-      if (shopsData.success) setShops(shopsData.shops);
-      if (locsData.success && locsData.locations) setLocations(locsData.locations);
+      if (Array.isArray(batchesData)) setBatches(batchesData);
+      if (Array.isArray(shopsData)) setShops(shopsData);
+      if (Array.isArray(locsData)) setLocations(locsData);
     } catch (err) {
       console.error("Failed to refresh data:", err);
     }
