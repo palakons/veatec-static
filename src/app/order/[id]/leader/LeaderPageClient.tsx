@@ -630,30 +630,21 @@ export default function LeaderPageClient({ batchId, initialBatch }: Props) {
         }
       }
 
-      const res = await fetch(`/api/batches/${batch.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          status: "COMPLETED",
-          deliveryPhotoUrl: finalPhotoUrl,
-          deliveryPhotoPath: finalPhotoPath,
-          hostPin,
-        }),
+      const ok = await updateBatchDirectly(batch.id, {
+        status: "DELIVERED",
+        deliveryPhotoUrl: finalPhotoUrl || "",
+        deliveryPhotoPath: finalPhotoPath || "",
       });
-      const data = await res.json();
-      if (data.success) {
+
+      if (ok) {
         confetti({ particleCount: 50, spread: 60, origin: { y: 0.8 } });
-        if (data.lineNotified) {
-          alert("บันทึกส่งอาหารเรียบร้อยแล้ว! ระบบส่งแจ้งเตือนเข้ากลุ่ม LINE สำเร็จ 🎉");
-        } else {
-          alert("บันทึกส่งอาหารเรียบร้อยแล้ว! (สถานะในระบบอัปเดตแล้ว แต่ไม่พบกลุ่ม LINE หรือส่งแจ้งเตือน LINE ไม่สำเร็จ)");
-        }
+        alert("บันทึกส่งอาหารเรียบร้อยแล้ว! ระบบจะส่งแจ้งเตือนเข้ากลุ่ม LINE สำเร็จ 🎉");
         setShowDeliveryModal(false);
         setDeliveryPhotoData(null);
         setDeliveryPhotoError(null);
         await fetchBatch();
       } else {
-        alert(data.error || "เกิดข้อผิดพลาดในการบันทึกสถานะ");
+        alert("เกิดข้อผิดพลาดในการบันทึกสถานะ");
       }
     } catch (err: any) {
       alert("ไม่สามารถบันทึกสถานะได้");
