@@ -228,11 +228,10 @@ export default function HomeClient({ initialBatches, initialLocations }: Props) 
   // Helper to determine if a batch is fully closed / delivered with photo or cancelled
   const isBatchFullyClosed = useCallback((b: BatchWithDetails) => {
     if (b.status === "CANCELLED") return true;
-    if (b.status === "COMPLETED") {
-      // If completed, consider closed (especially if delivery photo uploaded)
+    if (b.status === "COMPLETED" || (b.status as any) === "DELIVERED") {
+      // If completed or delivered, consider closed
       return true;
     }
-    // Any other status (ORDERED, DELIVERING, PENDING, or OPEN with expired cutoff) is NOT closed yet!
     return false;
   }, []);
 

@@ -631,7 +631,7 @@ export default function LeaderPageClient({ batchId, initialBatch }: Props) {
       }
 
       const ok = await updateBatchDirectly(batch.id, {
-        status: "DELIVERED",
+        status: "COMPLETED",
         deliveryPhotoUrl: finalPhotoUrl || "",
         deliveryPhotoPath: finalPhotoPath || "",
       });
