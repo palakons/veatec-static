@@ -1,3 +1,4 @@
+import { resolveImageUrl, resolveShopPromptPayQr } from "@/lib/image-url";
 "use client";
 
 import { createClientOrder, deleteClientOrder, createClientBatch, updateClientBatchStatus } from "@/lib/client-order-service";
@@ -3101,25 +3102,12 @@ export default function HomeClient({ initialBatches, initialLocations }: Props) 
 
                     {/* Card 2: Display QR */}
                     {(() => {
-                      const shopQrUrl =
-                        activeBatch.shop.promptpayQrUrl ||
-                        (activeBatch.shop.promptpayNumber
-                          ? `https://promptpay.io/${activeBatch.shop.promptpayNumber.replace(/\D/g, "")}.png`
-                          : null);
+                      const shopQrUrl = resolveShopPromptPayQr(activeBatch.shop);
 
                       const handleQrAction = () => {
                         // On Mobile (touch device / small screen): download image directly for bank app scanner
-                        const isMobile = typeof window !== "undefined" && (window.innerWidth < 640 || "ontouchstart" in window);
-                        if (isMobile && shopQrUrl) {
-                          const a = document.createElement("a");
-                          a.href = shopQrUrl;
-                          a.download = `PromptPay-${activeBatch.shop.name}.png`;
-                          a.target = "_blank";
-                          a.click();
-                        } else {
-                          // On PC / Desktop: Enlarge full screen modal to scan with phone
-                          setShowPromptPayModal(true);
-                        }
+                        // Always open the full screen interactive preview modal (safe on both mobile and PC)
+                        setShowPromptPayModal(true);
                       };
 
                       return (

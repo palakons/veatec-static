@@ -1,3 +1,4 @@
+import { resolveImageUrl } from "@/lib/image-url";
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
@@ -281,7 +282,7 @@ function ShopAdminCard({
                 title="คลิกเพื่อขยายดู QR LINE ขนาดใหญ่"
               >
                 <img
-                  src={shop.lineQrUrl}
+                  src={resolveImageUrl(shop.lineQrUrl) || ""}
                   alt={`LINE QR ${shop.name}`}
                   className="h-full w-full object-contain"
                   loading="lazy"
@@ -3924,7 +3925,7 @@ export default function AdminClient({
                     <div className="relative h-32 w-full rounded-xl overflow-hidden bg-gray-100 border border-gray-200">
                       {loc.photoUrl ? (
                         <img
-                          src={loc.photoUrl}
+                          src={resolveImageUrl(loc.photoUrl) || ""}
                           alt={loc.name}
                           className="h-full w-full object-cover"
                         />
