@@ -109,3 +109,64 @@ export async function deleteClientOrder(
   });
   return true;
 }
+
+export interface CreateBatchInput {
+  shopId: string;
+  date: string;
+  cutoffTime: string;
+  targetMinAmount: number;
+  notes?: string;
+  hostLineId?: string;
+  hostPhone?: string;
+  hostName?: string;
+  hostPin: string;
+  buildingId: string;
+  buildingName: string;
+}
+
+export async function createClientBatch(input: CreateBatchInput): Promise<any> {
+  if (!isFirebaseConfigured || !db) {
+    throw new Error("ระบบฐานข้อมูลยังไม่พร้อมใช้งาน กรุณาลองใหม่อีกครั้ง");
+  }
+
+  const batchId = `batch-${Date.now()}`;
+  const newBatch = {
+    id: batchId,
+    shopId: input.shopId,
+    date: input.date,
+    cutoffTime: input.cutoffTime,
+    targetMinAmount: input.targetMinAmount,
+    currentTotalAmount: 0,
+    status: "OPEN",
+    notes: input.notes || "",
+    hostLineId: input.hostLineId || "",
+    hostPhone: input.hostPhone || "",
+    hostName: input.hostName || "",
+    hostPin: input.hostPin,
+    buildingId: input.buildingId,
+    buildingName: input.buildingName,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+
+  await setDoc(doc(db, "batches", batchId), JSON.parse(JSON.stringify(newBatch)));
+  return newBatch;
+}
+
+export async function updateClientBatchStatus(batchId: string, status: string, hostPin?: string): Promise<boolean> {
+  if (!isFirebaseConfigured || !db) return false;
+  const batchRef = doc(db, "batches", batchId);
+  const snap = await getDoc(batchRef);
+  if (!snap.exists()) return false;
+
+  const data = snap.data() as any;
+  if (hostPin && data.hostPin && data.hostPin !== hostPin) {
+    throw new Error("PIN หัวหน้าตี้ไม่ถูกต้อง");
+  }
+
+  await updateDoc(batchRef, {
+    status,
+    updatedAt: new Date().toISOString(),
+  });
+  return true;
+}

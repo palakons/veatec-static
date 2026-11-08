@@ -1,6 +1,6 @@
 "use client";
 
-import { createClientOrder, deleteClientOrder } from "@/lib/client-order-service";
+import { createClientOrder, deleteClientOrder, createClientBatch, updateClientBatchStatus } from "@/lib/client-order-service";
 import { getClientDeliveryLocations, getClientShops, getClientBatches } from "@/lib/client-api";
 import { useEffect, useState, useRef, useMemo, useCallback } from "react";
 import Link from "next/link";
@@ -851,10 +851,9 @@ export default function HomeClient({ initialBatches, initialLocations }: Props) 
         locations.find((l) => l.id === "loc-m4") ||
         locations[0] ||
         CAMPUS_LOCATIONS[0];
-      const res = await fetch("/api/batches", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      let newBatch: any;
+      try {
+        newBatch = await createClientBatch({
           shopId: openShopId,
           date: selectedDate,
           cutoffTime: openCutoffTime,
@@ -866,13 +865,11 @@ export default function HomeClient({ initialBatches, initialLocations }: Props) 
           hostPin: finalPin,
           buildingId: selectedBuilding.id,
           buildingName: selectedBuilding.name,
-        }),
-      });
-
-      const data = await res.json();
-      if (!data.success) {
-        throw new Error(data.error || "ไม่สามารถเปิดกระดานได้");
+        });
+      } catch (err: any) {
+        throw new Error(err?.message || "ไม่สามารถเปิดกระดานได้");
       }
+      const data = { success: true, batch: newBatch };
 
       try {
         localStorage.setItem("veatec_user_line", cleanLeader);
@@ -979,23 +976,15 @@ export default function HomeClient({ initialBatches, initialLocations }: Props) 
       if (!confirm("ต้องการปิดรับออเดอร์กระดานนี้ใช่หรือไม่? เมื่อปิดแล้วกระดานจะย้ายไปคลังและไม่สามารถสั่งเพิ่มได้")) return;
       const hostPin = typeof window !== "undefined" ? localStorage.getItem(`veatec_host_pin_${activeBatch.id}`) || activeBatch.hostPin : activeBatch.hostPin;
       try {
-        const res = await fetch(`/api/batches/${activeBatch.id}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            status: "CLOSED",
-            hostPin,
-          }),
-        });
-        const data = await res.json();
-        if (data.success) {
+        const ok = await updateClientBatchStatus(activeBatch.id, "CLOSED", hostPin);
+        if (ok) {
           alert("ปิดรับออเดอร์กระดานนี้เรียบร้อยแล้ว");
           await fetchBatches();
         } else {
-          alert(data.error || "เกิดข้อผิดพลาด");
+          alert("เกิดข้อผิดพลาดในการปิดกระดาน");
         }
-      } catch (e) {
-        alert("ไม่สามารถปิดกระดานได้");
+      } catch (e: any) {
+        alert(e?.message || "ไม่สามารถปิดกระดานได้");
       }
     });
   };
@@ -1349,26 +1338,17 @@ export default function HomeClient({ initialBatches, initialLocations }: Props) 
     if (!activeBatch) return;
     const hostPin = typeof window !== "undefined" ? localStorage.getItem(`veatec_host_pin_${activeBatch.id}`) || activeBatch.hostPin : activeBatch.hostPin;
     try {
-      const res = await fetch(`/api/batches/${activeBatch.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          status: "ORDERED",
-          isSelfPickup,
-          hostPin,
-        }),
-      });
-      const data = await res.json();
-      if (data.success) {
+      const ok = await updateClientBatchStatus(activeBatch.id, "ORDERED", hostPin);
+      if (ok) {
         alert("บันทึกส่งร้านเรียบร้อยแล้ว! กระดานนี้ปิดรับออเดอร์และอยู่ในแท็บรอส่งมอบ");
         setShowSendModal(false);
         setActiveGroup("PENDING");
         await fetchBatches(true);
       } else {
-        alert(data.error || "เกิดข้อผิดพลาด");
+        alert("เกิดข้อผิดพลาดในการบันทึกสถานะ");
       }
-    } catch (e) {
-      alert("ไม่สามารถบันทึกสถานะได้");
+    } catch (e: any) {
+      alert(e?.message || "ไม่สามารถบันทึกสถานะได้");
     }
   };
 
