@@ -1,6 +1,6 @@
 "use client";
 
-import { doc, updateDoc, setDoc, deleteDoc, collection } from "firebase/firestore";
+import { doc, updateDoc, setDoc, deleteDoc, collection, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { getClientBatches, getClientShops, getClientDeliveryLocations, getClientSuggestions } from "@/lib/client-api";
 import { resolveImageUrl } from "@/lib/image-url";
@@ -1076,14 +1076,11 @@ export default function AdminClient({
   const handleDeleteShop = async (id: string, name: string) => {
     if (!confirm(`คุณแน่ใจว่าต้องการลบร้าน "${name}" ออกจากระบบ?`)) return;
     try {
-      const res = await fetch(`/api/shops?id=${id}`, { method: "DELETE" });
-      const data = await res.json();
-      if (data.success) {
-        setShops((prev) => prev.filter((s) => s.id !== id));
-        alert(`ลบร้าน "${name}" เรียบร้อยแล้ว`);
-      } else {
-        alert(data.error || "Failed to delete shop");
+      if (db) {
+        await deleteDoc(doc(db, "shops", id));
       }
+      setShops((prev) => prev.filter((s) => s.id !== id));
+      alert(`ลบร้าน "${name}" เรียบร้อยแล้ว`);
     } catch (e: any) {
       alert("Error: " + e.message);
     }
@@ -1122,22 +1119,15 @@ export default function AdminClient({
 
     try {
       setTogglingShopActiveId(shop.id);
-      const res = await fetch("/api/shops", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...shop,
+      if (db) {
+        await updateDoc(doc(db, "shops", shop.id), {
           isActive: nextActive,
-        }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        setShops((prev) =>
-          prev.map((s) => (s.id === shop.id ? { ...s, isActive: nextActive } : s))
-        );
-      } else {
-        alert(data.error || "เกิดข้อผิดพลาดในการเปลี่ยนสถานะร้านค้า");
+          updatedAt: new Date().toISOString(),
+        });
       }
+      setShops((prev) =>
+        prev.map((s) => (s.id === shop.id ? { ...s, isActive: nextActive } : s))
+      );
     } catch (err: any) {
       alert("Error: " + err.message);
     } finally {
@@ -1199,14 +1189,18 @@ export default function AdminClient({
         })),
       };
 
-      const res = await fetch("/api/shops", {
-        method: editingShopId ? "PUT" : "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
+      const shopId = editingShopId || `shop-${Date.now()}`;
+      const fullShopDoc = {
+        ...payload,
+        id: shopId,
+        createdAt: editingShopId ? undefined : new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      Object.keys(fullShopDoc).forEach(k => (fullShopDoc as any)[k] === undefined && delete (fullShopDoc as any)[k]);
 
-      const data = await res.json();
-      if (!data.success) throw new Error(data.error);
+      if (db) {
+        await setDoc(doc(db, "shops", shopId), fullShopDoc, { merge: true });
+      }
 
       alert(editingShopId ? `แก้ไขร้าน "${shopName}" สำเร็จ!` : `เพิ่มร้าน "${shopName}" เข้าสู่ระบบสำเร็จ!`);
       setShowShopModal(false);
@@ -1565,19 +1559,19 @@ export default function AdminClient({
   const fetchSanitizedMenus = async () => {
     setLoadingSanitizer(true);
     try {
-      const res = await fetch("/api/menu-sanitizer");
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success && Array.isArray(data.items)) {
-          const map: Record<string, SanitizedMenuItem> = {};
-          data.items.forEach((it: SanitizedMenuItem) => {
+      if (db) {
+        const snap = await getDocs(collection(db, "sanitized_menus"));
+        const map: Record<string, SanitizedMenuItem> = {};
+        snap.forEach((d) => {
+          const it = d.data() as SanitizedMenuItem;
+          if (it && it.shopId && it.originalName) {
             map[`${it.shopId}___${it.originalName.trim()}`] = it;
-          });
-          setSanitizedRecords(map);
-        }
+          }
+        });
+        setSanitizedRecords(map);
       }
     } catch (e) {
-      console.warn("Failed to fetch sanitized menus:", e);
+      console.warn("Failed to fetch sanitized menus directly from Firestore:", e);
     } finally {
       setLoadingSanitizer(false);
     }
@@ -1675,35 +1669,34 @@ export default function AdminClient({
   ) => {
     if (!newSanitizedName.trim()) return;
     try {
-      const res = await fetch("/api/menu-sanitizer", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "update_manual",
-          id: recordId,
-          originalName,
-          sanitizedName: newSanitizedName.trim(),
-        }),
-      });
-
-      if (res.ok) {
-        setSanitizedRecords((prev) => {
-          const updated = { ...prev };
-          for (const k in updated) {
-            if (updated[k].id === recordId) {
-              updated[k] = {
-                ...updated[k],
-                sanitizedName: newSanitizedName.trim(),
-                hasTypo: originalName.trim() !== newSanitizedName.trim(),
-                source: "manual",
-                updatedAt: new Date().toISOString(),
-              };
-            }
-          }
-          return updated;
-        });
-        setEditingSanitizedItem(null);
+      if (db) {
+        await setDoc(
+          doc(db, "sanitized_menus", recordId),
+          {
+            sanitizedName: newSanitizedName.trim(),
+            hasTypo: originalName.trim() !== newSanitizedName.trim(),
+            source: "manual",
+            updatedAt: new Date().toISOString(),
+          },
+          { merge: true }
+        );
       }
+      setSanitizedRecords((prev) => {
+        const updated = { ...prev };
+        for (const k in updated) {
+          if (updated[k].id === recordId) {
+            updated[k] = {
+              ...updated[k],
+              sanitizedName: newSanitizedName.trim(),
+              hasTypo: originalName.trim() !== newSanitizedName.trim(),
+              source: "manual",
+              updatedAt: new Date().toISOString(),
+            };
+          }
+        }
+        return updated;
+      });
+      setEditingSanitizedItem(null);
     } catch (err) {
       console.warn("Manual save error:", err);
     }
@@ -1782,22 +1775,15 @@ export default function AdminClient({
 
     try {
       setTogglingLocationActiveId(loc.id);
-      const res = await fetch("/api/locations", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...loc,
+      if (db) {
+        await updateDoc(doc(db, "locations", loc.id), {
           isActive: nextActive,
-        }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        setLocations((prev) =>
-          prev.map((l) => (l.id === loc.id ? { ...l, isActive: nextActive } : l))
-        );
-      } else {
-        alert(data.error || "Failed to update location status");
+          updatedAt: new Date().toISOString(),
+        });
       }
+      setLocations((prev) =>
+        prev.map((l) => (l.id === loc.id ? { ...l, isActive: nextActive } : l))
+      );
     } catch (err: any) {
       alert("Error: " + err.message);
     } finally {
@@ -1808,14 +1794,11 @@ export default function AdminClient({
   const handleDeleteLocation = async (id: string, name: string) => {
     if (!confirm(`คุณแน่ใจว่าต้องการลบจุดส่ง "${name}" ออกจากระบบ?`)) return;
     try {
-      const res = await fetch(`/api/locations?id=${id}`, { method: "DELETE" });
-      const data = await res.json();
-      if (data.success) {
-        setLocations((prev) => prev.filter((l) => l.id !== id));
-        alert(`ลบจุดส่ง "${name}" สำเร็จ`);
-      } else {
-        alert(data.error || "Failed to delete location");
+      if (db) {
+        await deleteDoc(doc(db, "locations", id));
       }
+      setLocations((prev) => prev.filter((l) => l.id !== id));
+      alert(`ลบจุดส่ง "${name}" สำเร็จ`);
     } catch (e: any) {
       alert("Error: " + e.message);
     }
@@ -1845,25 +1828,23 @@ export default function AdminClient({
         isActive: locIsActive,
       };
 
-      const res = await fetch("/api/locations", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-
-      const data = await res.json();
-      if (!data.success) throw new Error(data.error);
-
-      // Immediately update local UI state so image & details update with zero delay
-      if (data.location) {
-        setLocations((prev) => {
-          const exists = prev.some((l) => l.id === data.location.id);
-          if (exists) {
-            return prev.map((l) => (l.id === data.location.id ? data.location : l));
-          }
-          return [...prev, data.location];
-        });
+      const locId = editingLocationId || `loc-${Date.now()}`;
+      const locationDoc = {
+        ...payload,
+        id: locId,
+        updatedAt: new Date().toISOString(),
+      };
+      if (db) {
+        await setDoc(doc(db, "locations", locId), locationDoc, { merge: true });
       }
+
+      setLocations((prev) => {
+        const exists = prev.some((l) => l.id === locId);
+        if (exists) {
+          return prev.map((l) => (l.id === locId ? (locationDoc as any) : l));
+        }
+        return [...prev, (locationDoc as any)];
+      });
 
       alert(editingLocationId ? `แก้ไขจุดส่ง "${locName}" สำเร็จ!` : `เพิ่มจุดส่ง "${locName}" สำเร็จ!`);
       setShowLocationModal(false);
