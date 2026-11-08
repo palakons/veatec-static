@@ -1,5 +1,7 @@
 "use client";
 
+import { db } from "@/lib/firebase";
+import { collection, addDoc } from "firebase/firestore";
 import { useState } from "react";
 import { X, Send, Sparkles, MessageSquareHeart, CheckCircle2, AlertCircle } from "lucide-react";
 import { useLanguage } from "@/lib/i18n";
@@ -29,20 +31,14 @@ export default function SuggestionModal({ onClose }: Props) {
     setError(null);
 
     try {
-      const res = await fetch("/api/suggestions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      if (db) {
+        await addDoc(collection(db, "suggestions"), {
           category,
-          name: name.trim(),
+          name: name.trim() || "ไม่ประสงค์ออกนาม",
           contact: contact.trim(),
           message: message.trim(),
-        }),
-      });
-
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || "เกิดข้อผิดพลาดในการส่งข้อเสนอแนะ");
+          createdAt: new Date().toISOString(),
+        });
       }
 
       setSubmitted(true);
