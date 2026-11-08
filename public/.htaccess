@@ -1,0 +1,24 @@
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /veatec/
+
+  # If requested path is an existing file or directory, serve it directly
+  RewriteCond %{REQUEST_FILENAME} -f [OR]
+  RewriteCond %{REQUEST_FILENAME} -d
+  RewriteRule ^ - [L]
+
+  # Dynamic route rewrite: /order/<id>/leader -> /order/current/leader/index.html
+  RewriteRule ^order/[^/]+/leader/?$ order/current/leader/index.html [L,QSA]
+
+  # Dynamic route rewrite: /order/<id> -> /order/current/index.html
+  RewriteRule ^order/[^/]+/?$ order/current/index.html [L,QSA]
+
+  # Dynamic route rewrite: /shop/<id> -> /shop/current/index.html
+  RewriteRule ^shop/[^/]+/?$ shop/current/index.html [L,QSA]
+
+  # Dynamic route rewrite: /delivery/<id> -> /delivery/current/index.html
+  RewriteRule ^delivery/[^/]+/?$ delivery/current/index.html [L,QSA]
+
+  # Fallback for client-side routing
+  RewriteRule ^ index.html [L]
+</IfModule>
