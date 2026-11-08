@@ -1,5 +1,7 @@
 "use client";
 
+import { doc, updateDoc, setDoc, deleteDoc, collection } from "firebase/firestore";
+import { db } from "@/lib/firebase";
 import { getClientBatches, getClientShops, getClientDeliveryLocations, getClientSuggestions } from "@/lib/client-api";
 import { resolveImageUrl } from "@/lib/image-url";
 import { useState, useEffect, useMemo } from "react";
@@ -680,33 +682,13 @@ export default function AdminClient({
   }, []);
 
   const fetchVercelStatus = async () => {
-    try {
-      setLoadingVercel(true);
-      const res = await fetch("/api/system/vercel");
-      const data = await res.json();
-      if (data.success) {
-        setVercelStatus(data);
-      }
-    } catch (e) {
-      console.warn("fetchVercelStatus error", e);
-    } finally {
-      setLoadingVercel(false);
-    }
+    // In static mode, bypass /api/system/vercel
+    setLoadingVercel(false);
   };
 
   const fetchSystemStatus = async () => {
-    try {
-      setRefreshingStatus(true);
-      const res = await fetch("/api/system/status");
-      const data = await res.json();
-      if (data.success && data.status) {
-        setSystemStatus(data.status);
-      }
-    } catch (e) {
-      console.warn("fetchSystemStatus error", e);
-    } finally {
-      setRefreshingStatus(false);
-    }
+    // In static mode, bypass /api/system/status
+    setRefreshingStatus(false);
   };
 
   const handleProbeFirebase = async () => {
@@ -936,7 +918,9 @@ export default function AdminClient({
   const handleDeleteSuggestion = async (id: string) => {
     if (!confirm("ต้องการลบข้อเสนอแนะนี้ใช่หรือไม่?")) return;
     try {
-      await fetch(`/api/suggestions?id=${id}`, { method: "DELETE" });
+      if (db) {
+        await deleteDoc(doc(db, "suggestions", id));
+      }
       setSuggestions((prev) => prev.filter((s) => s.id !== id));
     } catch (e) {
       console.error("Failed to delete suggestion", e);
@@ -1002,22 +986,15 @@ export default function AdminClient({
         finalReason = inputReason.trim() || "แอดมินยกเลิกกระดาน";
       }
 
-      const res = await fetch(`/api/batches/${batchId}`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: "Bearer m4-admin",
-        },
-        body: JSON.stringify({
+      if (db) {
+        await updateDoc(doc(db, "batches", batchId), {
           status: newStatus,
-          cancelReason: finalReason,
-        }),
-      });
-      const data = await res.json();
-      if (data.success) {
+          cancelReason: finalReason || "",
+          updatedAt: new Date().toISOString(),
+        });
         refreshData();
       } else {
-        alert(data.error || "ไม่สามารถเปลี่ยนสถานะได้");
+        alert("ฐานข้อมูลไม่พร้อมใช้งาน");
       }
     } catch (e) {
       alert("เกิดข้อผิดพลาดในการเปลี่ยนสถานะ");
@@ -1027,19 +1004,14 @@ export default function AdminClient({
   const handleToggleBatchTest = async (batchId: string, currentIsTest: boolean) => {
     try {
       setTogglingBatchTestId(batchId);
-      const res = await fetch(`/api/batches/${batchId}`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: "Bearer m4-admin",
-        },
-        body: JSON.stringify({ isTest: !currentIsTest }),
-      });
-      const data = await res.json();
-      if (data.success) {
+      if (db) {
+        await updateDoc(doc(db, "batches", batchId), {
+          isTest: !currentIsTest,
+          updatedAt: new Date().toISOString(),
+        });
         refreshData();
       } else {
-        alert(data.error || "ไม่สามารถเปลี่ยนสถานะ Test ได้");
+        alert("ฐานข้อมูลไม่พร้อมใช้งาน");
       }
     } catch (e) {
       alert("เกิดข้อผิดพลาดในการเปลี่ยนสถานะ Test");
