@@ -2,6 +2,23 @@ import { isFirebaseConfigured, db } from "./firebase";
 import { collection, getDocs } from "firebase/firestore";
 import type { Batch, BatchWithDetails, Shop, Order } from "./types";
 import { CAMPUS_LOCATIONS, DeliveryLocation } from "./locations";
+import { resolveImageUrl } from "./image-url";
+
+function sanitizeShopImages(shop: Shop): Shop {
+  return {
+    ...shop,
+    menuImageUrl: resolveImageUrl(shop.menuImageUrl) || shop.menuImageUrl,
+    promptpayQrUrl: resolveImageUrl(shop.promptpayQrUrl) || shop.promptpayQrUrl,
+    lineQrUrl: resolveImageUrl(shop.lineQrUrl) || shop.lineQrUrl,
+  };
+}
+
+function sanitizeLocationImages(loc: DeliveryLocation): DeliveryLocation {
+  return {
+    ...loc,
+    photoUrl: resolveImageUrl(loc.photoUrl) || loc.photoUrl,
+  };
+}
 
 const FALLBACK_SHOPS: Shop[] = [
   {
@@ -23,44 +40,6 @@ const FALLBACK_SHOPS: Shop[] = [
     openDays: [1, 2, 3, 4, 5],
     menuItems: [],
   },
-  {
-    id: "shop-chao-rai",
-    name: "ร้านอาหารชาวไร่ วังจันทร์",
-    nameEn: "Chao Rai Restaurant (Wangchan 344)",
-    cuisine: "อาหารไทย-จีน & อาหารป่าชื่อดังกว่า 30 ปี",
-    description: "ร้านอาหารระดับตำนาน อ.วังจันทร์ ริมถนนสาย 344 แยกชุมแสง วัตถุดิบทะเลสด อาหารป่ารสจัด และหอยจ๊อปูเนื้อทะลัก",
-    phone: "081-454-6374",
-    lineId: "chaorai_wangchan",
-    gmapUrl: "https://maps.google.com/?q=ร้านอาหารชาวไร่+วังจันทร์+ระยอง",
-    promptpayNumber: "0814546374",
-    promptpayAccountName: "ร้านอาหารชาวไร่ (Chao Rai Restaurant)",
-    promptpayQrUrl: "https://promptpay.io/0814546374.png",
-    menuImageUrl: "https://images.unsplash.com/photo-1563379091339-03b21ab4a4f8?auto=format&fit=crop&w=1200&q=80",
-    minDeliveryAmount: 200,
-    defaultCutoffTime: "11:20",
-    isActive: true,
-    openDays: [1, 2, 3, 4, 5],
-    menuItems: [],
-  },
-  {
-    id: "shop-krua-mangmee",
-    name: "ครัวมั่งมี วังจันทร์ (กม.68)",
-    nameEn: "Krua Mangmee (KM.68 Payubnai)",
-    cuisine: "อาหารไทย-จีนโฮมเมด & ข้าวแห้งทะเล",
-    description: "ร้านดังประจำ ต.ป่ายุบใน กม.68 เมนูขึ้นชื่อข้าวแห้งทะเล ปลาพิโรธรสจัดจ้าน และกระเพาะปลาผัดแห้งสูตรภัตตาคาร",
-    phone: "087-137-9837",
-    lineId: "mangmee_km68",
-    gmapUrl: "https://maps.google.com/?q=ครัวมั่งมี+วังจันทร์+กม.68+ระยอง",
-    promptpayNumber: "0871379837",
-    promptpayAccountName: "ครัวมั่งมี โต๊ะจีน (Krua Mangmee)",
-    promptpayQrUrl: "https://promptpay.io/0871379837.png",
-    menuImageUrl: "https://images.unsplash.com/photo-1569718212165-3a8278d5f624?auto=format&fit=crop&w=1200&q=80",
-    minDeliveryAmount: 200,
-    defaultCutoffTime: "11:25",
-    isActive: true,
-    openDays: [1, 2, 3, 4, 5],
-    menuItems: [],
-  },
 ];
 
 export async function getClientDeliveryLocations(): Promise<DeliveryLocation[]> {
@@ -68,13 +47,13 @@ export async function getClientDeliveryLocations(): Promise<DeliveryLocation[]> 
     try {
       const snap = await getDocs(collection(db, "locations"));
       if (!snap.empty) {
-        return snap.docs.map((d) => d.data() as DeliveryLocation);
+        return snap.docs.map((d) => sanitizeLocationImages(d.data() as DeliveryLocation));
       }
     } catch (err) {
       console.warn("Client Firestore getLocations error:", err);
     }
   }
-  return CAMPUS_LOCATIONS;
+  return CAMPUS_LOCATIONS.map(sanitizeLocationImages);
 }
 
 export async function getClientShops(): Promise<Shop[]> {
@@ -82,13 +61,13 @@ export async function getClientShops(): Promise<Shop[]> {
     try {
       const snap = await getDocs(collection(db, "shops"));
       if (!snap.empty) {
-        return snap.docs.map((d) => d.data() as Shop);
+        return snap.docs.map((d) => sanitizeShopImages(d.data() as Shop));
       }
     } catch (err) {
       console.warn("Client Firestore getShops error:", err);
     }
   }
-  return FALLBACK_SHOPS;
+  return FALLBACK_SHOPS.map(sanitizeShopImages);
 }
 
 export async function getClientBatches(): Promise<BatchWithDetails[]> {
@@ -104,8 +83,8 @@ export async function getClientBatches(): Promise<BatchWithDetails[]> {
         const batches = batchesSnap.docs.map((d) => d.data() as Batch);
         const orders = ordersSnap.docs.map((d) => d.data() as Order);
         const shops = shopsSnap.docs.length > 0
-          ? shopsSnap.docs.map((d) => d.data() as Shop)
-          : FALLBACK_SHOPS;
+          ? shopsSnap.docs.map((d) => sanitizeShopImages(d.data() as Shop))
+          : FALLBACK_SHOPS.map(sanitizeShopImages);
 
         return batches.map((b) => {
           const shop = shops.find((s) => s.id === b.shopId) || FALLBACK_SHOPS[0];
@@ -116,8 +95,12 @@ export async function getClientBatches(): Promise<BatchWithDetails[]> {
 
           return {
             ...b,
+            deliveryPhotoUrl: resolveImageUrl(b.deliveryPhotoUrl) || b.deliveryPhotoUrl,
             shop,
-            orders: batchOrders,
+            orders: batchOrders.map((ord) => ({
+              ...ord,
+              slipImageUrl: resolveImageUrl(ord.slipImageUrl) || ord.slipImageUrl,
+            })),
             currentTotalAmount,
             isMinMet,
             amountRemaining,

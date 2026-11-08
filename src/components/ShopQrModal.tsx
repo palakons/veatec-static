@@ -1,3 +1,4 @@
+import { resolveImageUrl } from "@/lib/image-url";
 "use client";
 
 import { useState } from "react";
@@ -27,9 +28,10 @@ export default function ShopQrModal({ isOpen, onClose, type, shop }: ShopQrModal
   if (!isOpen) return null;
 
   const isLine = type === "line";
-  const qrUrl = isLine
+  const rawUrl = isLine
     ? shop.lineQrUrl
-    : shop.promptpayQrUrl || (shop.promptpayNumber ? `https://promptpay.io/${shop.promptpayNumber}.png` : "");
+    : shop.promptpayQrUrl || (shop.promptpayNumber ? `https://promptpay.io/${shop.promptpayNumber.replace(/\D/g, "")}.png` : "");
+  const qrUrl = resolveImageUrl(rawUrl);
 
   if (!qrUrl) return null;
 
