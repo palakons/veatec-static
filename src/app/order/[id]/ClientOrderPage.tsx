@@ -8,10 +8,20 @@ export default function ClientOrderPage() {
   const router = useRouter();
 
   useEffect(() => {
-    if (params?.id) {
-      router.replace(`/?batch=${params.id}`);
+    let targetId = params?.id as string;
+    if (typeof window !== "undefined") {
+      const pathParts = window.location.pathname.split("/").filter(Boolean);
+      const orderIdx = pathParts.indexOf("order");
+      if (orderIdx !== -1 && pathParts[orderIdx + 1] && pathParts[orderIdx + 1] !== "current") {
+        targetId = pathParts[orderIdx + 1];
+      }
+    }
+    const query = typeof window !== "undefined" ? window.location.search : "";
+    if (targetId && targetId !== "current") {
+      const extraQuery = query ? query.replace(/^\?/, "&") : "";
+      router.replace(`/?batch=${targetId}${extraQuery}`);
     } else {
-      router.replace("/");
+      router.replace(`/${query}`);
     }
   }, [params, router]);
 

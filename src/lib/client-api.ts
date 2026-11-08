@@ -114,3 +114,19 @@ export async function getClientBatches(): Promise<BatchWithDetails[]> {
   }
   return [];
 }
+
+export async function getClientBatchById(id: string): Promise<BatchWithDetails | null> {
+  if (isFirebaseConfigured && db) {
+    try {
+      const allBatches = await getClientBatches();
+      // Match by exact ID or if id is "current" pick the first open/ordered batch
+      if (id === "current") {
+        return allBatches[0] || null;
+      }
+      return allBatches.find((b) => b.id === id) || null;
+    } catch (err) {
+      console.warn("getClientBatchById error:", err);
+    }
+  }
+  return null;
+}

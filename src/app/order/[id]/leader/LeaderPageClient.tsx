@@ -1,3 +1,4 @@
+import { getClientBatchById, getClientDeliveryLocations } from "@/lib/client-api";
 "use client";
 
 import { deleteClientOrder } from "@/lib/client-order-service";
@@ -156,26 +157,27 @@ export default function LeaderPageClient({ batchId, initialBatch }: Props) {
   const fetchBatch = async (fresh = false) => {
     try {
       if (fresh) setIsRefreshing(true);
-      const url = fresh ? `/api/batches/${batchId}?role=leader&fresh=true` : `/api/batches/${batchId}?role=leader`;
-      const [resBatch, resLocs] = await Promise.all([
-        fetch(url),
-        fetch("/api/locations").catch(() => null),
+      let targetId = batchId;
+      if (typeof window !== "undefined") {
+        const pathParts = window.location.pathname.split("/").filter(Boolean);
+        const orderIdx = pathParts.indexOf("order");
+        if (orderIdx !== -1 && pathParts[orderIdx + 1] && pathParts[orderIdx + 1] !== "current") {
+          targetId = pathParts[orderIdx + 1];
+        }
+      }
+      const [foundBatch, locs] = await Promise.all([
+        getClientBatchById(targetId),
+        getClientDeliveryLocations().catch(() => []),
       ]);
-      const data = await resBatch.json();
-      if (data.success && data.batch) {
-        setBatch(data.batch);
+      if (foundBatch) {
+        setBatch(foundBatch);
         const now = new Date();
         setLastRefreshedAt(
           now.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" })
         );
       }
-      if (resLocs) {
-        try {
-          const locsData = await resLocs.json();
-          if (locsData.success && Array.isArray(locsData.locations)) {
-            setRuntimeLocations(locsData.locations);
-          }
-        } catch (e) {}
+      if (Array.isArray(locs) && locs.length > 0) {
+        setRuntimeLocations(locs);
       }
     } catch (err) {
       console.warn("Fetch batch error:", err);
