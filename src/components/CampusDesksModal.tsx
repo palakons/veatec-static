@@ -1,5 +1,6 @@
 "use client";
 
+import { getClientDeliveryLocations } from "@/lib/client-api";
 import { useState, useEffect } from "react";
 import { CAMPUS_LOCATIONS, DeliveryLocation, getLocalizedLocation, getRuntimeLocations, setRuntimeLocations } from "@/lib/locations";
 import { X, Building2, CheckCircle2, Info } from "lucide-react";

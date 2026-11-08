@@ -1,3 +1,5 @@
+"use client";
+
 
 async function updateBatchDirectly(batchId: string, updates: any): Promise<boolean> {
   if (!db) return false;
@@ -16,8 +18,6 @@ async function updateBatchDirectly(batchId: string, updates: any): Promise<boole
 import { db } from "@/lib/firebase";
 import { doc, updateDoc } from "firebase/firestore";
 import { getClientBatchById, getClientDeliveryLocations } from "@/lib/client-api";
-"use client";
-
 import { deleteClientOrder } from "@/lib/client-order-service";
 import { useEffect, useState, useRef } from "react";
 import Link from "next/link";
@@ -280,15 +280,7 @@ export default function LeaderPageClient({ batchId, initialBatch }: Props) {
 
     const hostPin = typeof window !== "undefined" ? localStorage.getItem(`veatec_host_pin_${batch.id}`) || batch.hostPin : batch.hostPin;
     try {
-      await fetch(`/api/batches/${batch.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          status: batch.status,
-          isSelfPickup: nextVal,
-          hostPin,
-        }),
-      });
+      await updateBatchDirectly(batch.id, { isSelfPickup: nextVal });
       await fetchBatch();
     } catch (e) {}
   };
