@@ -1370,23 +1370,65 @@ export default function AdminClient({
   // ThaiLLM Status, Ping & Diagnostics Functions
   // -------------------------------------------------------------
   const fetchLlmStatus = async () => {
-    // In static mode, provide default config
-    setLlmStatus({
-      configured: true,
-      config: {
-        model: "openthaigpt-thaillm-8b-instruct-v7.2",
-        apiUrl: "http://thaillm.or.th/api/v1/chat/completions",
-        consumerId: "c-vistec",
-        rateLimit: "120 rpm",
-        hasKey: true,
-        maskedKey: "K25Cnc...2pQe",
-        temperature: 0.2,
-        maxTokens: 512,
-        reasoningMode: "direct",
-      },
-      status: "ready",
-    } as any);
-    setLoadingLlmStatus(false);
+    setLoadingLlmStatus(true);
+    const startTime = Date.now();
+    try {
+      const res = await fetch("https://thaillmproxy-onlcrhe4ea-uc.a.run.app", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "sanitize_single", dishName: "ทดสอบ" }),
+      });
+      const latencyMs = Date.now() - startTime;
+      if (res.ok) {
+        setLlmStatus({
+          online: true,
+          latencyMs,
+          status: "ready",
+          configured: true,
+          config: {
+            model: "openthaigpt-thaillm-8b-instruct-v7.2",
+            apiUrl: "https://thaillmproxy-onlcrhe4ea-uc.a.run.app",
+            consumerId: "c-vistec",
+            rateLimit: "120 rpm",
+            hasKey: true,
+            maskedKey: "K25Cnc...2pQe",
+            temperature: 0.2,
+            maxTokens: 512,
+            reasoningMode: "direct",
+          },
+          telemetry: {
+            rateLimitHits: 0,
+            lastRateLimitIso: null,
+          },
+        } as any);
+      } else {
+        setLlmStatus({
+          online: false,
+          latencyMs,
+          status: "error",
+          error: `HTTP ${res.status}`,
+          configured: true,
+          config: {
+            model: "openthaigpt-thaillm-8b-instruct-v7.2",
+            apiUrl: "https://thaillmproxy-onlcrhe4ea-uc.a.run.app",
+          },
+        } as any);
+      }
+    } catch (e: any) {
+      setLlmStatus({
+        online: false,
+        latencyMs: Date.now() - startTime,
+        status: "error",
+        error: e.message,
+        configured: true,
+        config: {
+          model: "openthaigpt-thaillm-8b-instruct-v7.2",
+          apiUrl: "https://thaillmproxy-onlcrhe4ea-uc.a.run.app",
+        },
+      } as any);
+    } finally {
+      setLoadingLlmStatus(false);
+    }
   };
 
   const handleTestInteractiveLlm = async () => {
