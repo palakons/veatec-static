@@ -602,10 +602,29 @@ export default function AdminClient({
   const [refreshingStatus, setRefreshingStatus] = useState(false);
   const [cleaningStorage, setCleaningStorage] = useState(false);
 
-  // Vercel Live Quota & Project Status
-  const [vercelStatus, setVercelStatus] = useState<any>(null);
-  const [loadingVercel, setLoadingVercel] = useState(false);
-  const [isVercelPaneOpen, setIsVercelPaneOpen] = useState(true);
+  // Cloud Functions Live Status
+  const [isFunctionsPaneOpen, setIsFunctionsPaneOpen] = useState(true);
+  const [testingFunctions, setTestingFunctions] = useState(false);
+  const [functionsStatus, setFunctionsStatus] = useState<any>({
+    region: "us-central1",
+    runtime: "Node.js 22 (2nd Gen)",
+    services: [
+      {
+        name: "sendLineNotification",
+        type: "HTTP Webhook",
+        url: "https://us-central1-one-order-af750.cloudfunctions.net/sendLineNotification",
+        status: "ACTIVE",
+        role: "LINE Push (New Board & Food Delivered strictly)",
+      },
+      {
+        name: "thaillmProxy",
+        type: "HTTP Proxy",
+        url: "https://thaillmproxy-onlcrhe4ea-uc.a.run.app",
+        status: "ACTIVE",
+        role: "ThaiLLM Typo Correction & Menu Suggestion",
+      },
+    ],
+  });
 
   // Shop Add/Edit Modal State
   const [showShopModal, setShowShopModal] = useState(false);
@@ -664,7 +683,7 @@ export default function AdminClient({
 
   useEffect(() => {
     fetchSystemStatus();
-    fetchVercelStatus();
+    
     try {
       const isAuth = sessionStorage.getItem("veatec_admin_auth");
       if (isAuth === "true") {
@@ -681,9 +700,24 @@ export default function AdminClient({
     }
   }, []);
 
-  const fetchVercelStatus = async () => {
-    // In static mode, bypass /api/system/vercel
-    setLoadingVercel(false);
+  const handlePingFunctions = async () => {
+    setTestingFunctions(true);
+    try {
+      const res = await fetch("https://thaillmproxy-onlcrhe4ea-uc.a.run.app", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "sanitize_single", dishName: "ทดสอบ" }),
+      });
+      if (res.ok) {
+        alert("✅ Cloud Functions ทำงานปกติ ตอบสนองและเชื่อมต่อกับ ThaiLLM สมบูรณ์!");
+      } else {
+        alert("⚠️ Cloud Functions ตอบกลับสถานะ " + res.status);
+      }
+    } catch (e: any) {
+      alert("❌ ไม่สามารถเชื่อมต่อ Cloud Functions: " + e.message);
+    } finally {
+      setTestingFunctions(false);
+    }
   };
 
   const fetchSystemStatus = async () => {
@@ -2296,49 +2330,39 @@ export default function AdminClient({
     )}
   </div>
 
-  {/* Collapsible Vercel Hosting & Fast Origin Transfer Quota Card */}
+  {/* Collapsible Google Cloud Functions 2nd Gen & Serverless Backend Card */}
   <div className="rounded-2xl border border-slate-200 bg-white shadow-2xs overflow-hidden transition-all">
     {/* Header Bar */}
     <div
-      onClick={() => {
-        setIsVercelPaneOpen((prev) => !prev);
-        if (!vercelStatus) fetchVercelStatus();
-      }}
+      onClick={() => setIsFunctionsPaneOpen((prev) => !prev)}
       className="p-3.5 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 cursor-pointer hover:bg-slate-50/80 transition-colors"
     >
       <div className="flex items-center gap-3">
-        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-black text-white shrink-0 font-black text-sm shadow-xs">
-          ▲
+        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-600 text-white shrink-0 font-black text-sm shadow-xs">
+          ⚡
         </div>
         <div>
           <div className="flex flex-wrap items-center gap-1.5">
-            <span
-              className={`rounded-md px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wider border ${
-                vercelStatus?.quota?.status === "warning"
-                  ? "bg-amber-50 text-amber-900 border-amber-300"
-                  : "bg-emerald-50 text-emerald-900 border-emerald-200"
-              }`}
-            >
-              {vercelStatus?.quota?.status === "warning" ? "⚠️ 75% Used" : "Normal"}
+            <span className="rounded-md px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wider border bg-emerald-50 text-emerald-900 border-emerald-200">
+              Active • 2nd Gen
             </span>
             <span className="rounded-md bg-slate-100 text-slate-800 border border-slate-200 px-2 py-0.5 text-[10px] font-bold">
-              Team: {vercelStatus?.team?.slug || "vt-9cbe"}
+              Region: us-central1
+            </span>
+            <span className="rounded-md bg-blue-50 text-blue-800 border border-blue-200 px-2 py-0.5 text-[10px] font-bold">
+              Node.js 22
             </span>
             <span className="text-xs font-black text-slate-900 ml-1">
-              Vercel Fast Origin Transfer &amp; Hosting
+              Google Cloud Functions (Serverless Backend)
             </span>
           </div>
           <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-slate-500 mt-0.5">
             <span>
-              โควตาฟรี:{" "}
-              <strong className="text-amber-700 font-bold">
-                ~7.5 GB / 10.0 GB
-              </strong>{" "}
-              (เหลืออีก ~2.5 GB)
+              ฟังก์ชันใช้งาน: <strong className="text-blue-700 font-bold">2 ฟังก์ชัน</strong> (ThaiLLM Proxy &amp; LINE Push)
             </span>
             <span>•</span>
             <span>
-              สถานะ: <strong className="text-emerald-700">{vercelStatus?.project?.latestDeployState || "READY"}</strong> ({vercelStatus?.project?.name || "one-order-2"})
+              สถาปัตยกรรม: <strong className="text-emerald-700">100% Serverless (Zero Host Daemon)</strong>
             </span>
           </div>
         </div>
@@ -2349,22 +2373,24 @@ export default function AdminClient({
           type="button"
           onClick={(e) => {
             e.stopPropagation();
-            fetchVercelStatus();
+            handlePingFunctions();
           }}
-          disabled={loadingVercel}
-          className="rounded-xl border border-slate-300 bg-white px-2.5 py-1 text-xs font-bold text-slate-700 hover:bg-slate-50 shadow-2xs flex items-center gap-1 cursor-pointer"
-          title="รีเฟรชข้อมูล Vercel"
+          disabled={testingFunctions}
+          className="rounded-xl border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-bold text-blue-700 hover:bg-blue-100 shadow-2xs flex items-center gap-1 cursor-pointer"
+          title="ทดสอบยิง Ping Cloud Function"
         >
           <RefreshCw
-            className={`h-3 w-3 text-slate-700 ${loadingVercel ? "animate-spin" : ""}`}
+            className={`h-3 w-3 text-blue-700 ${testingFunctions ? "animate-spin" : ""}`}
           />
-          <span className="hidden sm:inline">รีเฟรช</span>
+          <span className="hidden sm:inline">
+            {testingFunctions ? "กำลัง Ping..." : "ทดสอบ Ping ฟังก์ชัน"}
+          </span>
         </button>
         <span className="text-xs font-bold text-slate-800 bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded-xl border border-slate-200 transition-colors flex items-center gap-1">
-          <span>{isVercelPaneOpen ? "ย่อเก็บ" : "ขยายดูรายละเอียด"}</span>
+          <span>{isFunctionsPaneOpen ? "ย่อเก็บ" : "ขยายดูรายละเอียด"}</span>
           <ChevronDown
             className={`h-3.5 w-3.5 transition-transform duration-200 ${
-              isVercelPaneOpen ? "rotate-180" : ""
+              isFunctionsPaneOpen ? "rotate-180" : ""
             }`}
           />
         </span>
@@ -2372,89 +2398,71 @@ export default function AdminClient({
     </div>
 
     {/* Expanded Content */}
-    {isVercelPaneOpen && (
+    {isFunctionsPaneOpen && (
       <div className="border-t border-slate-200 p-4 sm:p-5 space-y-4 bg-slate-50/40">
-        {/* Warning Banner */}
-        <div className="rounded-xl border border-amber-300 bg-amber-50/90 p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-amber-950">
+        {/* Architecture Note */}
+        <div className="rounded-xl border border-blue-200 bg-blue-50/80 p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-blue-950">
           <div className="space-y-0.5">
-            <div className="font-black text-amber-900 flex items-center gap-1.5">
-              <span>⚠️</span>
-              <span>Fast Origin Transfer ใช้ไป 75% (7.5 GB จาก 10.0 GB)</span>
+            <div className="font-black text-blue-900 flex items-center gap-1.5">
+              <span>🚀</span>
+              <span>Fully Serverless Architecture on Google Cloud Platform</span>
             </div>
-            <p className="text-[11px] text-amber-800 leading-relaxed">
-              *เราได้ปรับปรุงระบบ <strong>Client-side Image Resize</strong> ลดขนาดรูปภาพสลิปและ QR Code ลงเหลือ ~40-50 KB และเปิด <strong>CDN Immutable Caching</strong> เพื่อหยุดการกิน Bandwidth เพิ่มเติมแล้ว
+            <p className="text-[11px] text-blue-800 leading-relaxed">
+              vEATec ย้ายจาก Server Daemon บนเครื่อง local ไปรันบน <strong>Google Cloud Functions 2nd Gen (Node.js 22)</strong> ทั้งหมด ทำให้เว็บสถิติบอร์ด VISTEC Apache ไม่จำเป็นต้องเปิดรันเซิร์ฟเวอร์ทิ้งไว้ และส่งแจ้งเตือน LINE เฉพาะตอนจำเป็นอย่างแม่นยำ
             </p>
           </div>
           <div className="flex items-center gap-2 shrink-0">
             <a
-              href="https://vercel.com/vt-9cbe/~/usage"
+              href="https://console.cloud.google.com/functions/list?project=one-order-af750"
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 rounded-xl bg-black text-white hover:bg-slate-800 px-3 py-1.5 text-xs font-bold shadow-2xs transition-all"
+              className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 text-white hover:bg-blue-700 px-3 py-1.5 text-xs font-bold shadow-2xs transition-all"
             >
-              <span>เปิดดู Vercel Usage Tab</span>
+              <span>เปิดดู GCP Functions Console</span>
               <ExternalLink className="h-3 w-3" />
             </a>
           </div>
         </div>
 
-        {/* Metric Cards */}
-        <div className="grid gap-3 sm:grid-cols-3">
-          {/* Card 1: Fast Origin Transfer */}
+        {/* Function Cards */}
+        <div className="grid gap-3 sm:grid-cols-2">
+          {/* Card 1: sendLineNotification */}
           <div className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-2xs space-y-2">
             <div className="flex items-center justify-between text-[11px] font-bold text-slate-500">
-              <span>FAST ORIGIN TRANSFER</span>
-              <span className="text-amber-600 font-black">75%</span>
+              <span className="flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-full bg-emerald-500"></span>
+                LINE NOTIFICATION DISPATCHER
+              </span>
+              <span className="text-emerald-700 font-mono font-bold">2nd Gen</span>
             </div>
-            <div className="text-xl font-black text-slate-900 font-mono">
-              ~7.5 <span className="text-xs text-slate-500 font-normal">/ 10.0 GB</span>
+            <div className="text-base font-black text-slate-900 font-mono">
+              sendLineNotification
             </div>
-            <div className="h-2 w-full rounded-full bg-slate-100 overflow-hidden border border-slate-200">
-              <div
-                className="h-full bg-amber-500 rounded-full transition-all duration-500"
-                style={{ width: "75%" }}
-              />
-            </div>
-            <div className="text-[10px] text-slate-400">
-              โควตาฟรี 10 GB ต่อเดือน (รีเซ็ตทุก Billing Cycle)
-            </div>
-          </div>
-
-          {/* Card 2: Connected Project */}
-          <div className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-2xs space-y-1.5">
-            <div className="text-[11px] font-bold text-slate-500">PROJECT &amp; DEPLOYMENT</div>
-            <div className="text-base font-black text-slate-900 truncate">
-              {vercelStatus?.project?.name || "one-order-2"}
-            </div>
-            <div className="flex items-center gap-1.5 text-xs">
-              <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-              <span className="font-bold text-emerald-700 font-mono">{vercelStatus?.project?.latestDeployState || "READY"}</span>
-              <span className="text-slate-400 font-mono text-[11px]">({vercelStatus?.project?.nodeVersion || "Node 20.x"})</span>
-            </div>
-            <div className="text-[10px] text-slate-500 truncate pt-0.5">
-              URL: <a href={`https://${vercelStatus?.project?.latestDeployUrl || "one-order-2.vercel.app"}`} target="_blank" rel="noopener noreferrer" className="text-purple-700 hover:underline font-mono">{vercelStatus?.project?.latestDeployUrl || "one-order-2.vercel.app"}</a>
+            <p className="text-[11px] text-slate-600 leading-relaxed">
+              ฟังก์ชันบรอดแคสต์เข้า LINE กลุ่ม VISTEC โดยตรง ตรวจสอบและจำกัดความถี่ส่งเฉพาะตอนเปิดตี้ใหม่และข้าวมาส่งเท่านั้น (Zero Spam)
+            </p>
+            <div className="rounded-lg bg-slate-50 border border-slate-200 p-2 text-[10px] font-mono text-slate-600 break-all select-all">
+              https://us-central1-one-order-af750.cloudfunctions.net/sendLineNotification
             </div>
           </div>
 
-          {/* Card 3: Team Context */}
-          <div className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-2xs space-y-1.5">
-            <div className="text-[11px] font-bold text-slate-500">VERCEL TEAM CONTEXT</div>
-            <div className="text-base font-black text-slate-900 font-mono truncate">
-              {vercelStatus?.team?.slug || "vt-9cbe"}
+          {/* Card 2: thaillmProxy */}
+          <div className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-2xs space-y-2">
+            <div className="flex items-center justify-between text-[11px] font-bold text-slate-500">
+              <span className="flex items-center gap-1.5">
+                <span className="h-2 w-2 rounded-full bg-blue-500"></span>
+                THAI LLM INTELLIGENT PROXY
+              </span>
+              <span className="text-blue-700 font-mono font-bold">Cloud Run 2nd Gen</span>
             </div>
-            <div className="text-xs text-slate-600 font-medium">
-              Plan: <span className="font-bold text-slate-900">{vercelStatus?.team?.plan || "Hobby"}</span>
+            <div className="text-base font-black text-slate-900 font-mono">
+              thaillmProxy
             </div>
-            <div className="pt-1">
-              <a
-                href="https://vercel.com/vt-9cbe/~/settings/billing"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-[11px] text-purple-700 hover:underline font-bold flex items-center gap-1"
-              >
-                <span>ดูรอบบิลและวันรีเซ็ตใน Billing</span>
-                <ExternalLink className="h-2.5 w-2.5" />
-              </a>
+            <p className="text-[11px] text-slate-600 leading-relaxed">
+              ฟังก์ชันเชื่อมต่อ OpenThaiGPT ThaiLLM สแกนคำผิด ปรับเมนูอาหารภาษาไทย และวิเคราะห์เมนูแนะนำ พร้อมตัวกรอง Thinking Tags แบบอัตโนมัติ
+            </p>
+            <div className="rounded-lg bg-slate-50 border border-slate-200 p-2 text-[10px] font-mono text-slate-600 break-all select-all">
+              https://thaillmproxy-onlcrhe4ea-uc.a.run.app
             </div>
           </div>
         </div>
