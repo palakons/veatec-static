@@ -1,3 +1,5 @@
+import { getClientShops } from "@/lib/client-api";
+import { Shop } from "@/lib/types";
 "use client";
 
 import { useState } from "react";
@@ -56,27 +58,32 @@ export default function AIMenuSuggester({
     setIsRateLimited(false);
 
     try {
-      const res = await fetch("/api/thaillm/recommend", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          prompt: textToSubmit,
-          shopId,
-          shopName,
-        }),
+      // In static mode, suggest from shop menu items matching keywords
+      const shops = await getClientShops();
+      const targetShop = shops.find((s: any) => s.id === shopId);
+      const items = (targetShop?.menuItems || []).filter((m: any) => m.isAvailable !== false);
+
+      const words = textToSubmit.toLowerCase().split(/\s+/);
+      const matched = items.filter((it: any) => {
+        const n = it.name.toLowerCase();
+        return words.some((w: string) => n.includes(w));
       });
 
-      const data = await res.json();
-      if (data.rateLimited) {
-        setIsRateLimited(true);
-        setErrorMsg(data.error || "ชน Rate Limit ของระบบ AI ชั่วคราว รบกวนรอ 3-5 วินาทีแล้วลองใหม่ครับ");
-      } else if (!data.success) {
-        setErrorMsg(data.error || "ขออภัย ป้า AI สับสนเล็กน้อย ลองถามใหม่อีกครั้งนะ");
+      const selected = matched.length > 0 ? matched.slice(0, 3) : items.slice(0, 3);
+      if (selected.length > 0) {
+        setRecommendations(
+          selected.map((it: any, idx: number) => ({
+            name: it.name,
+            price: it.price || 50,
+            confidence: 0.95 - idx * 0.05,
+            reason: `เมนูยอดนิยมของร้าน ${shopName} ตรงกับความต้องการ "${textToSubmit}"`,
+          }))
+        );
       } else {
-        setRecommendations(data.recommendations || []);
+        setErrorMsg("ไม่พบเมนูที่เข้ากับคำค้นหา ลองระบุชื่อวัตถุดิบ เช่น ไก่, กะเพรา, ไข่ดาว");
       }
     } catch (err: any) {
-      setErrorMsg("ไม่สามารถติดต่อเซิร์ฟเวอร์ AI ได้ในขณะนี้");
+      setErrorMsg("ไม่สามารถค้นหาเมนูแนะนำได้ในขณะนี้");
     } finally {
       setIsLoading(false);
     }

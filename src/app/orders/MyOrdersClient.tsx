@@ -65,11 +65,10 @@ export default function MyOrdersClient() {
 
   // Fetch drop-off locations dynamically from DB
   useEffect(() => {
-    fetch("/api/locations")
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.success && Array.isArray(data.locations) && data.locations.length > 0) {
-          setRuntimeLocations(data.locations);
+    getClientDeliveryLocations()
+      .then((locations) => {
+        if (Array.isArray(locations) && locations.length > 0) {
+          setRuntimeLocations(locations);
         }
       })
       .catch(() => {});
@@ -152,12 +151,10 @@ export default function MyOrdersClient() {
 
   const fetchBatches = async (fresh = false) => {
     try {
-      const url = fresh ? "/api/batches?fresh=true" : "/api/batches";
-      const res = await fetch(url);
-      const data = await res.json();
-      if (data.success && Array.isArray(data.batches)) {
+      const batchList = await getClientBatches();
+      if (Array.isArray(batchList)) {
         const batchMap: Record<string, BatchWithDetails> = {};
-        data.batches.forEach((b: BatchWithDetails) => {
+        batchList.forEach((b: BatchWithDetails) => {
           batchMap[b.id] = b;
         });
         setBatches(batchMap);

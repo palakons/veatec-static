@@ -17,12 +17,11 @@ export default function CampusDesksModal({ onClose, selectedId, onSelect }: Prop
   const [locations, setLocations] = useState<DeliveryLocation[]>(() => getRuntimeLocations());
 
   useEffect(() => {
-    fetch("/api/locations")
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.success && Array.isArray(data.locations) && data.locations.length > 0) {
-          setLocations(data.locations);
-          setRuntimeLocations(data.locations);
+    getClientDeliveryLocations()
+      .then((locs) => {
+        if (Array.isArray(locs) && locs.length > 0) {
+          setLocations(locs);
+          setRuntimeLocations(locs);
         }
       })
       .catch(() => {});

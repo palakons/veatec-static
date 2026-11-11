@@ -1,3 +1,4 @@
+import { getClientBatchById } from "@/lib/client-api";
 "use client";
 
 import { useEffect, useState, useRef } from "react";
@@ -92,18 +93,15 @@ export default function ShopManifestClient({ batchId, initialBatch }: Props) {
   const fetchBatch = async (fresh = false) => {
     try {
       if (fresh) setIsRefreshing(true);
-      // Request full merchant data to verify slips; fresh=true bypasses server cache
-      const url = fresh ? `/api/batches/${batchId}?role=shop&fresh=true` : `/api/batches/${batchId}?role=shop`;
-      const res = await fetch(url);
-      const data = await res.json();
-      if (data.success) {
-        setBatch(data.batch);
+      const batchData = await getClientBatchById(batchId);
+      if (batchData) {
+        setBatch(batchData);
         const now = new Date();
         setLastRefreshedAt(
           now.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" })
         );
       } else {
-        if (!batch) setError(data.error || "Batch not found");
+        if (!batch) setError("Batch not found");
       }
     } catch (err: any) {
       if (!batch) setError(err.message || "Failed to load batch");

@@ -297,21 +297,10 @@ export default function LeaderPageClient({ batchId, initialBatch }: Props) {
     setUpdatingStatus(true);
     const hostPin = typeof window !== "undefined" ? localStorage.getItem(`veatec_host_pin_${batch.id}`) || batch.hostPin : batch.hostPin;
     try {
-      const res = await fetch(`/api/batches/${batch.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          status: newStatus,
-          hostPin,
-        }),
+      await updateBatchDirectly(batch.id, {
+        status: newStatus,
       });
-      const data = await res.json();
-      if (data.success) {
-        alert(newStatus === "CLOSED" ? "ปิดรับออเดอร์เรียบร้อยแล้ว" : "เปิดรับออเดอร์ต่อเรียบร้อยแล้ว");
-        await fetchBatch();
-      } else {
-        alert(data.error || "เกิดข้อผิดพลาด");
-      }
+      alert(newStatus === "CLOSED" ? "ปิดรับออเดอร์เรียบร้อยแล้ว" : "เปิดรับออเดอร์ต่อเรียบร้อยแล้ว");
     } catch (e) {
       alert("ไม่สามารถเปลี่ยนสถานะได้");
     } finally {
@@ -341,32 +330,7 @@ export default function LeaderPageClient({ batchId, initialBatch }: Props) {
     );
 
     try {
-      const res = await fetch("/api/thaillm/craft", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          shopName: batch.shop.name,
-          situation: aiSituation.trim() || undefined,
-          rawNote: aiCustomNote.trim() || undefined,
-          batchStatus: batch.status,
-          isSentToShop: batch.status === "ORDERED" || batch.status === "DELIVERING" || batch.status === "COMPLETED",
-          buildingName: batch.buildingName || "M4",
-          totalOrders: currentActiveOrders.length,
-          totalBoxes: calculatedBoxes,
-          length: aiLength,
-          tone: aiTone,
-        }),
-      });
-      const data = await res.json();
-      if (data.success && data.message) {
-        const baseMsg = data.message.trim();
-        const finalMsg = aiIncludeBoardInfo ? `${baseMsg}${buildBoardInfoSnippet(batch)}` : baseMsg;
-        setCraftedMessage(finalMsg);
-      } else {
-        alert(data.error || "ไม่สามารถให้ AI เรียบเรียงได้ในขณะนี้");
-      }
-    } catch (e) {
-      alert("เกิดข้อผิดพลาดในการเชื่อมต่อกับ AI");
+      handleGenerateTemplateMsg();
     } finally {
       setIsCraftingAi(false);
     }
@@ -388,25 +352,14 @@ export default function LeaderPageClient({ batchId, initialBatch }: Props) {
     setSubmittingPending(true);
     const hostPin = typeof window !== "undefined" ? localStorage.getItem(`veatec_host_pin_${batch.id}`) || batch.hostPin : batch.hostPin;
     try {
-      const res = await fetch(`/api/batches/${batch.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          status: clearOnly ? (batch.deliveryPhotoUrl ? "COMPLETED" : "ORDERED") : "PENDING",
-          pendingMessage: clearOnly ? "" : craftedMessage.trim() || aiCustomNote.trim() || aiSituation,
-          hostPin,
-        }),
+      await updateBatchDirectly(batch.id, {
+        status: clearOnly ? (batch.deliveryPhotoUrl ? "COMPLETED" : "ORDERED") : "PENDING",
+        pendingMessage: clearOnly ? "" : craftedMessage.trim() || aiCustomNote.trim() || aiSituation,
       });
-      const data = await res.json();
-      if (data.success) {
-        alert(clearOnly ? "ยกเลิกสถานะรอตรวจสอบแล้ว" : "ประกาศแจ้งเตือนและขึ้นสถานะรอตรวจสอบ (PENDING) เรียบร้อยแล้ว ⚠️");
-        setShowAiModal(false);
-        setCraftedMessage("");
-        setAiCustomNote("");
-        await fetchBatch();
-      } else {
-        alert(data.error || "ไม่สามารถบันทึกได้");
-      }
+      alert(clearOnly ? "ยกเลิกสถานะรอตรวจสอบแล้ว" : "ประกาศแจ้งเตือนและขึ้นสถานะรอตรวจสอบ (PENDING) เรียบร้อยแล้ว ⚠️");
+      setShowAiModal(false);
+      setCraftedMessage("");
+      setAiCustomNote("");
     } catch (e) {
       alert("เกิดข้อผิดพลาดในการส่งข้อมูล");
     } finally {
@@ -432,25 +385,14 @@ export default function LeaderPageClient({ batchId, initialBatch }: Props) {
     setIsCancellingBoard(true);
 
     try {
-      const res = await fetch(`/api/batches/${batch.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          status: "CANCELLED",
-          hostPin: pinToSubmit,
-          cancelReason: finalReason,
-        }),
+      await updateBatchDirectly(batch.id, {
+        status: "CANCELLED",
+        cancelReason: finalReason,
       });
-      const data = await res.json();
-      if (data.success) {
-        alert("ยกเลิกกระดานตี้เรียบร้อยแล้ว 🚫");
-        setShowCancelModal(false);
-        setCancelPin("");
-        setCustomCancelReason("");
-        await fetchBatch();
-      } else {
-        setCancelError(data.error || "ไม่สามารถยกเลิกกระดานได้");
-      }
+      alert("ยกเลิกกระดานตี้เรียบร้อยแล้ว 🚫");
+      setShowCancelModal(false);
+      setCancelPin("");
+      setCustomCancelReason("");
     } catch (err) {
       setCancelError("เกิดข้อผิดพลาดในการเชื่อมต่อ");
     } finally {
@@ -655,25 +597,7 @@ export default function LeaderPageClient({ batchId, initialBatch }: Props) {
 
   // Trigger LINE Push Reminder with Manifest and Order Text
   const handleSendLineReminder = async () => {
-    if (!batch) return;
-    setSendingLineReminder(true);
-    try {
-      const res = await fetch(`/api/batches/${batch.id}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "remind" }),
-      });
-      const data = await res.json();
-      if (!res.ok || !data.success) {
-        throw new Error(data.error || data.message || "ไม่สามารถส่งข้อความเข้า LINE ได้");
-      }
-      alert(data.message || "ส่งสรุปออเดอร์เข้า LINE เรียบร้อยแล้ว 🎉");
-      await fetchBatch(true);
-    } catch (err: any) {
-      alert(err.message || "เกิดข้อผิดพลาดในการส่งแจ้งเตือนเข้า LINE");
-    } finally {
-      setSendingLineReminder(false);
-    }
+    alert("ระบบจำกัดเฉพาะ 2 การแจ้งเตือนหลักใน LINE (เปิดตี้ใหม่ & อาหารส่งถึงแล้ว) เพื่อลดการรบกวนครับ");
   };
 
   // Share Board Invitation to Friends

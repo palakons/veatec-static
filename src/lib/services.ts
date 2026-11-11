@@ -1,3 +1,6 @@
+import { getClientBatches, getClientBatchById } from "@/lib/client-api";
+import { createClientOrder } from "@/lib/client-order-service";
+import { uploadBytesResumable } from "firebase/storage";
 import { isFirebaseConfigured, db, storage } from "./firebase";
 import { BatchWithDetails, Shop, Order, BatchStatus } from "./types";
 import {
@@ -135,20 +138,7 @@ async function compressWithObjectURL(blob: Blob, maxDim: number, quality: number
 }
 
 async function compressWithServer(file: File | Blob): Promise<string> {
-  const formData = new FormData();
-  formData.append("file", file);
-  const res = await fetch("/api/upload", {
-    method: "POST",
-    body: formData,
-  });
-  if (!res.ok) {
-    throw new Error(`Server compression failed (${res.status})`);
-  }
-  const data = await res.json();
-  if (!data.success || (!data.url && !data.dataUrl)) {
-    throw new Error(data.error || "Server compression failed");
-  }
-  return data.dataUrl || data.url;
+  throw new Error("Server compression disabled in static mode");
 }
 
 export async function compressImage(
@@ -295,65 +285,44 @@ export async function uploadDirectToStorage(
     mimeType = fileOrDataUrl.type || "image/jpeg";
   }
 
-  // 1. Ask our backend for a secure 10-minute Presigned PUT URL
-  onProgress?.(5);
-  const presignRes = await fetch("/api/upload/presign", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      category,
-      contentType: mimeType,
-      customFilename,
-    }),
-  });
+  const filename = customFilename || `${category}_${Date.now()}_${Math.random().toString(36).substring(2, 8)}.jpg`;
+  const filePath = `${category}/${filename}`;
 
-  if (!presignRes.ok) {
-    const errData = await presignRes.json().catch(() => ({}));
-    throw new Error(errData.error || `Failed to get upload authorization (${presignRes.status})`);
+  if (storage) {
+    onProgress?.(20);
+    const storageRef = ref(storage, filePath);
+    const uploadTask = uploadBytesResumable(storageRef, blob, { contentType: mimeType });
+
+    await new Promise<void>((resolve, reject) => {
+      uploadTask.on(
+        "state_changed",
+        (snapshot: any) => {
+          const pct = Math.round((snapshot.bytesTransferred / snapshot.totalBytes) * 75) + 20;
+          onProgress?.(Math.min(95, pct));
+        },
+        (error: any) => reject(error),
+        () => resolve()
+      );
+    });
+
+    const downloadUrl = await getDownloadURL(storageRef);
+    onProgress?.(100);
+
+    return {
+      filePath,
+      url: downloadUrl,
+      directUrl: downloadUrl,
+      proxyUrl: downloadUrl,
+    };
   }
 
-  const { uploadUrl, filePath, directUrl, proxyUrl, url } = await presignRes.json();
-  if (!uploadUrl) {
-    throw new Error("Missing upload URL in presign response");
-  }
-
-  onProgress?.(15);
-
-  // 2. Perform direct PUT to Google Cloud Storage with real-time byte progress (zero Vercel bandwidth)
-  await new Promise<void>((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open("PUT", uploadUrl, true);
-    xhr.setRequestHeader("Content-Type", mimeType);
-
-    xhr.upload.onprogress = (e) => {
-      if (e.lengthComputable) {
-        // Map upload byte progress from 15% to 95%
-        const percent = Math.min(95, Math.round(15 + (e.loaded / e.total) * 80));
-        onProgress?.(percent);
-      }
-    };
-
-    xhr.onload = () => {
-      if (xhr.status >= 200 && xhr.status < 300) {
-        onProgress?.(100);
-        resolve();
-      } else {
-        reject(new Error(`Direct upload to cloud storage failed with status ${xhr.status}`));
-      }
-    };
-
-    xhr.onerror = () => {
-      reject(new Error("Direct upload network error"));
-    };
-
-    xhr.send(blob);
-  });
-
+  onProgress?.(100);
+  const dataUrl = typeof fileOrDataUrl === "string" ? fileOrDataUrl : "";
   return {
     filePath,
-    url,
-    directUrl,
-    proxyUrl,
+    url: dataUrl,
+    directUrl: dataUrl,
+    proxyUrl: dataUrl,
   };
 }
 
@@ -380,20 +349,16 @@ export async function uploadSlipImage(file: File): Promise<string> {
 // Fetch Batches
 // -------------------------------------------------------------
 export async function getBatchesList(): Promise<BatchWithDetails[]> {
-  const res = await fetch("/api/batches", { cache: "no-store" });
-  const data = await res.json();
-  if (!data.success) throw new Error(data.error);
-  return data.batches;
+  return await getClientBatches();
 }
 
 // -------------------------------------------------------------
 // Fetch Single Batch
 // -------------------------------------------------------------
 export async function getBatch(batchId: string): Promise<BatchWithDetails> {
-  const res = await fetch(`/api/batches/${batchId}`, { cache: "no-store" });
-  const data = await res.json();
-  if (!data.success) throw new Error(data.error);
-  return data.batch;
+  const b = await getClientBatchById(batchId);
+  if (!b) throw new Error("Batch not found");
+  return b;
 }
 
 // -------------------------------------------------------------
@@ -409,10 +374,8 @@ export function subscribeToBatch(
       const batchRef = doc(db, "batches", batchId);
       const unsubscribe = onSnapshot(batchRef, async (docSnap) => {
         if (docSnap.exists()) {
-          // fetch full enriched batch from api or compute
-          const res = await fetch(`/api/batches/${batchId}`);
-          const data = await res.json();
-          if (data.success) onUpdate(data.batch);
+          const enriched = await getClientBatchById(batchId);
+          if (enriched) onUpdate(enriched);
         }
       });
       return unsubscribe;
@@ -448,28 +411,20 @@ export async function placeOrder(orderData: {
     throw new Error("Payment slip is required");
   }
 
-  const res = await fetch("/api/orders", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      batchId: orderData.batchId,
-      customerName: orderData.customerName,
-      customerPhone: orderData.customerPhone,
-      locationId: orderData.locationId,
-      items: orderData.items,
-      totalAmount: orderData.totalAmount,
-      slipImageUrl: slipUrl,
-    }),
+  const order = await createClientOrder({
+    batchId: orderData.batchId,
+    customerName: orderData.customerName,
+    customerPhone: orderData.customerPhone,
+    locationId: orderData.locationId,
+    items: orderData.items,
+    totalAmount: orderData.totalAmount,
+    slipImageUrl: slipUrl,
   });
 
-  const data = await res.json();
-  if (!data.success) {
-    throw new Error(data.error || "Failed to submit order");
-  }
-
+  const batch = await getClientBatchById(orderData.batchId);
   return {
-    order: data.order,
-    batch: data.batch,
+    order,
+    batch: batch as any,
   };
 }
 
@@ -481,7 +436,7 @@ export async function changeBatchStatus(
   status: BatchStatus,
   deliveryPhotoUrl?: string,
   deliveryPhotoPath?: string
-): Promise<BatchWithDetails> {
+): Promise<any> {
   let finalUrl = deliveryPhotoUrl;
   let finalPath = deliveryPhotoPath;
 
@@ -495,34 +450,16 @@ export async function changeBatchStatus(
     }
   }
 
-  const res = await fetch(`/api/batches/${batchId}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      status,
-      deliveryPhotoUrl: finalUrl,
-      deliveryPhotoPath: finalPath,
-    }),
-  });
+  const updatePayload: Record<string, any> = {
+    status,
+    updatedAt: new Date().toISOString(),
+  };
+  if (finalUrl) updatePayload.deliveryPhotoUrl = finalUrl;
+  if (finalPath) updatePayload.deliveryPhotoPath = finalPath;
 
-  if (!res.ok) {
-    const text = await res.text();
-    if (res.status === 413) {
-      throw new Error("ขนาดไฟล์รูปภาพใหญ่เกินกว่าที่ระบบรองรับ กรุณาถ่ายภาพใหม่อีกครั้ง");
-    }
-    try {
-      const data = JSON.parse(text);
-      throw new Error(data.error || `HTTP ${res.status}: ${text}`);
-    } catch (parseErr: any) {
-      if (parseErr.message && !parseErr.message.includes("is not valid JSON")) throw parseErr;
-      throw new Error(text || `Server Error ${res.status}`);
-    }
+  if (db) {
+    await updateDoc(doc(db, "batches", batchId), updatePayload);
   }
-
-  const data = await res.json();
-  if (!data.success) {
-    throw new Error(data.error || "Failed to update batch status");
-  }
-  return data.batch;
+  return { id: batchId, ...updatePayload };
 }
 

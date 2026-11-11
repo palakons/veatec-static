@@ -1,3 +1,5 @@
+import { getClientShops } from "@/lib/client-api";
+import { db } from "@/lib/firebase";
 "use client";
 
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
@@ -67,25 +69,35 @@ export default function DishAutocompleteInput({
       } catch (e) {}
     }
 
-    // 3. Fetch from /api/menu-autocomplete once
+    // 3. Fetch from Firestore / local shop menu in static mode
     setIsLoadingCatalog(true);
     try {
-      const url = shopId
-        ? `/api/menu-autocomplete?shopId=${encodeURIComponent(shopId)}`
-        : "/api/menu-autocomplete";
-      const res = await fetch(url);
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success && Array.isArray(data.items)) {
-          const entry = { items: data.items, timestamp: Date.now() };
-          clientCache.set(cacheKey, entry);
-          setCatalog(data.items);
+      if (db) {
+        const shops = await getClientShops();
+        const targetShop = shops.find((s: any) => s.id === shopId);
+        const officialItems: AutocompleteMenuItem[] = (targetShop?.menuItems || [])
+          .filter((m: any) => m.isAvailable !== false)
+          .map((m: any) => ({
+            id: `official-${targetShop?.id}-${encodeURIComponent(m.name)}`,
+            name: m.name,
+            originalName: m.name,
+            price: Number(m.price) || 0,
+            orderCount: 0,
+            totalQuantity: 0,
+            shopId: targetShop?.id || shopId,
+            shopName: targetShop?.name || "",
+            hasTypoCorrected: false,
+            isShopMenu: true,
+          }));
 
-          if (typeof window !== "undefined") {
-            try {
-              sessionStorage.setItem(`veatec_menu_cache_${cacheKey}`, JSON.stringify(entry));
-            } catch (e) {}
-          }
+        const entry = { items: officialItems, timestamp: Date.now() };
+        clientCache.set(cacheKey, entry);
+        setCatalog(officialItems);
+
+        if (typeof window !== "undefined") {
+          try {
+            sessionStorage.setItem(`veatec_menu_cache_${cacheKey}`, JSON.stringify(entry));
+          } catch (e) {}
         }
       }
     } catch (err) {
