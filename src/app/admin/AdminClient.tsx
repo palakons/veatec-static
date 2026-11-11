@@ -1445,20 +1445,46 @@ export default function AdminClient({
     setSanitizingSingleKey(key);
     try {
       const cleanName = dish.dishName.trim();
+      let sanitizedName = cleanName;
+      let hasTypo = false;
+
+      // Call live Cloud Function ThaiLLM Proxy
+      try {
+        const res = await fetch("https://thaillmproxy-onlcrhe4ea-uc.a.run.app", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "sanitize_single",
+            dishName: cleanName,
+          }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success && data.sanitized) {
+            sanitizedName = data.sanitized;
+            hasTypo = Boolean(data.hasTypo);
+          }
+        }
+      } catch (e) {
+        console.warn("ThaiLLM cloud function call failed, using default:", e);
+      }
+
       const record: SanitizedMenuItem = {
         id: key,
         shopId: dish.shopId,
         shopName: dish.shopName,
         originalName: cleanName,
-        sanitizedName: cleanName,
+        sanitizedName,
         amount: dish.totalQuantity,
-        hasTypo: false,
-        source: "manual",
+        hasTypo,
+        source: "thaillm",
         updatedAt: new Date().toISOString(),
       };
+
       if (db) {
         await setDoc(doc(db, "sanitized_menus", key), record, { merge: true });
       }
+
       setSanitizedRecords((prev) => ({
         ...prev,
         [key]: record,
