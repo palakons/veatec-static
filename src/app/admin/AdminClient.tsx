@@ -1392,12 +1392,43 @@ export default function AdminClient({
   const handleTestInteractiveLlm = async () => {
     if (!interactiveTestInput.trim() || testingInteractiveLlm) return;
     setTestingInteractiveLlm(true);
+    const startTime = Date.now();
     try {
+      const cleanInput = interactiveTestInput.trim();
+      const res = await fetch("https://thaillmproxy-onlcrhe4ea-uc.a.run.app", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "sanitize_single",
+          dishName: cleanInput,
+        }),
+      });
+
+      const latencyMs = Date.now() - startTime;
+
+      if (res.ok) {
+        const data = await res.json();
+        setInteractiveTestResult({
+          original: cleanInput,
+          sanitized: data.sanitized || cleanInput,
+          hasTypo: Boolean(data.hasTypo),
+          latencyMs,
+        });
+      } else {
+        setInteractiveTestResult({
+          original: cleanInput,
+          sanitized: cleanInput,
+          hasTypo: false,
+          latencyMs,
+        });
+      }
+    } catch (e: any) {
+      console.warn("Live test failed:", e);
       setInteractiveTestResult({
         original: interactiveTestInput.trim(),
         sanitized: interactiveTestInput.trim(),
         hasTypo: false,
-        latencyMs: 38,
+        latencyMs: Date.now() - startTime,
       });
     } finally {
       setTestingInteractiveLlm(false);
