@@ -783,7 +783,27 @@ export default function AdminClient({
   };
 
   const handleTestLinePush = async (targetId?: string) => {
-    setLineTestResult({ success: true, message: "LINE Daemon ทำงานอยู่เบื้องหลัง (vision06) จัดการแจ้งเตือนอัตโนมัติ 2 เวลา (เปิดตี้ใหม่ & จัดส่งเสร็จ)" });
+    setTestingLine(true);
+    try {
+      const res = await fetch("https://us-central1-one-order-af750.cloudfunctions.net/sendLineNotification", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "test_push" }),
+      });
+      if (res.ok) {
+        setLineTestResult({ success: true, message: "✅ ส่งข้อความทดสอบเข้ากลุ่ม LINE ผ่าน Cloud Function สำเร็จเรียบร้อยแล้ว!" });
+        alert("✅ ส่งข้อความทดสอบเข้ากลุ่ม LINE ผ่าน Cloud Function สำเร็จ!");
+      } else {
+        const text = await res.text();
+        setLineTestResult({ success: false, message: `⚠️ เกิดข้อผิดพลาด (${res.status}): ${text}` });
+        alert(`⚠️ ส่งไม่สำเร็จ (${res.status}): ${text}`);
+      }
+    } catch (e: any) {
+      setLineTestResult({ success: false, message: `❌ ไม่สามารถเชื่อมต่อ Cloud Function: ${e.message}` });
+      alert(`❌ ไม่สามารถเชื่อมต่อ Cloud Function: ${e.message}`);
+    } finally {
+      setTestingLine(false);
+    }
   };
 
   const handleSendBroadcast = async () => {
