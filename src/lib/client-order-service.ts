@@ -1,4 +1,5 @@
 import { db, isFirebaseConfigured } from "@/lib/firebase";
+import { fetchWithVeatecAuth, VEATEC_FUNCTIONS_CONFIG } from "@/lib/functions-client";
 import {
   collection,
   doc,
@@ -151,10 +152,9 @@ export async function createClientBatch(input: CreateBatchInput): Promise<any> {
 
   await setDoc(doc(db, "batches", batchId), JSON.parse(JSON.stringify(newBatch)));
 
-  // Trigger serverless LINE notification via Cloud Function
-  fetch("https://us-central1-one-order-af750.cloudfunctions.net/sendLineNotification", {
+  // Trigger serverless LINE notification via Cloud Function (Protected with App Secret)
+  fetchWithVeatecAuth(VEATEC_FUNCTIONS_CONFIG.sendLineNotificationUrl, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ batchId, type: "new_board" }),
   }).catch((e) => console.warn("Cloud function line notify error:", e));
 

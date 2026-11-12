@@ -26,6 +26,7 @@ import Navbar from "@/components/Navbar";
 import { BatchWithDetails, Order } from "@/lib/types";
 import { generateOneLongManifestImage } from "@/lib/manifest-image";
 import { getDropOffMapUrl, setRuntimeLocations } from "@/lib/locations";
+import { fetchWithVeatecAuth, VEATEC_FUNCTIONS_CONFIG } from "@/lib/functions-client";
 import { getTimeRemaining, formatCutoffDisplay } from "@/lib/utils";
 import { compressImage, uploadDirectToStorage } from "@/lib/services";
 import ShopQrModal from "@/components/ShopQrModal";
@@ -327,9 +328,8 @@ export default function LeaderPageClient({ batchId, initialBatch }: Props) {
     const situation = aiCustomNote.trim() || aiSituation || "อัปเดตสถานะออเดอร์";
 
     try {
-      const res = await fetch("https://thaillmproxy-onlcrhe4ea-uc.a.run.app", {
+      const res = await fetchWithVeatecAuth(VEATEC_FUNCTIONS_CONFIG.thaillmProxyUrl, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "craft_announcement",
           shopName,
@@ -602,10 +602,9 @@ export default function LeaderPageClient({ batchId, initialBatch }: Props) {
       });
 
       if (ok) {
-        // Trigger serverless LINE notification via Cloud Function
-        fetch("https://us-central1-one-order-af750.cloudfunctions.net/sendLineNotification", {
+        // Trigger serverless LINE notification via Cloud Function (Protected with App Secret)
+        fetchWithVeatecAuth(VEATEC_FUNCTIONS_CONFIG.sendLineNotificationUrl, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ batchId: batch.id, type: "delivered" }),
         }).catch((e) => console.warn("Cloud function line delivery notify error:", e));
         confetti({ particleCount: 50, spread: 60, origin: { y: 0.8 } });

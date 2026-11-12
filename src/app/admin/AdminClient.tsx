@@ -3,6 +3,7 @@
 import { doc, updateDoc, setDoc, deleteDoc, collection, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { getClientBatches, getClientShops, getClientDeliveryLocations, getClientSuggestions } from "@/lib/client-api";
+import { fetchWithVeatecAuth, VEATEC_FUNCTIONS_CONFIG } from "@/lib/functions-client";
 import { resolveImageUrl } from "@/lib/image-url";
 import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
@@ -703,9 +704,8 @@ export default function AdminClient({
   const handlePingFunctions = async () => {
     setTestingFunctions(true);
     try {
-      const res = await fetch("https://thaillmproxy-onlcrhe4ea-uc.a.run.app", {
+      const res = await fetchWithVeatecAuth(VEATEC_FUNCTIONS_CONFIG.thaillmProxyUrl, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "sanitize_single", dishName: "ทดสอบ" }),
       });
       if (res.ok) {
@@ -785,9 +785,8 @@ export default function AdminClient({
   const handleTestLinePush = async (targetId?: string) => {
     setTestingLine(true);
     try {
-      const res = await fetch("https://us-central1-one-order-af750.cloudfunctions.net/sendLineNotification", {
+      const res = await fetchWithVeatecAuth(VEATEC_FUNCTIONS_CONFIG.sendLineNotificationUrl, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "test_push" }),
       });
       if (res.ok) {
@@ -1393,9 +1392,8 @@ export default function AdminClient({
     setLoadingLlmStatus(true);
     const startTime = Date.now();
     try {
-      const res = await fetch("https://thaillmproxy-onlcrhe4ea-uc.a.run.app", {
+      const res = await fetchWithVeatecAuth(VEATEC_FUNCTIONS_CONFIG.thaillmProxyUrl, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "sanitize_single", dishName: "ทดสอบ" }),
       });
       const latencyMs = Date.now() - startTime;
@@ -1457,9 +1455,8 @@ export default function AdminClient({
     const startTime = Date.now();
     try {
       const cleanInput = interactiveTestInput.trim();
-      const res = await fetch("https://thaillmproxy-onlcrhe4ea-uc.a.run.app", {
+      const res = await fetchWithVeatecAuth(VEATEC_FUNCTIONS_CONFIG.thaillmProxyUrl, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "sanitize_single",
           dishName: cleanInput,
@@ -1575,11 +1572,10 @@ export default function AdminClient({
       let sanitizedName = cleanName;
       let hasTypo = false;
 
-      // Call live Cloud Function ThaiLLM Proxy
+      // Call live Cloud Function ThaiLLM Proxy (Protected with App Secret)
       try {
-        const res = await fetch("https://thaillmproxy-onlcrhe4ea-uc.a.run.app", {
+        const res = await fetchWithVeatecAuth(VEATEC_FUNCTIONS_CONFIG.thaillmProxyUrl, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             action: "sanitize_single",
             dishName: cleanName,

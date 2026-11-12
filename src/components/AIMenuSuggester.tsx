@@ -1,4 +1,5 @@
 import { getClientShops } from "@/lib/client-api";
+import { fetchWithVeatecAuth, VEATEC_FUNCTIONS_CONFIG } from "@/lib/functions-client";
 import { Shop } from "@/lib/types";
 "use client";
 
@@ -70,10 +71,9 @@ export default function AIMenuSuggester({
         return;
       }
 
-      // Real AI Call to Cloud Function ThaiLLM Proxy (Zero fallback)
-      const res = await fetch("https://thaillmproxy-onlcrhe4ea-uc.a.run.app", {
+      // Real AI Call to Cloud Function ThaiLLM Proxy (Protected with App Secret)
+      const res = await fetchWithVeatecAuth(VEATEC_FUNCTIONS_CONFIG.thaillmProxyUrl, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "recommend_dishes",
           prompt: textToSubmit,
