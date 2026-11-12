@@ -95,6 +95,7 @@ export default function LeaderPageClient({ batchId, initialBatch }: Props) {
   const [generatingManifest, setGeneratingManifest] = useState(false);
   const [manifestData, setManifestData] = useState<{ blob: Blob; dataUrl: string } | null>(null);
   const [copiedText, setCopiedText] = useState(false);
+  const [manifestTextMode, setManifestTextMode] = useState<"compact" | "detailed">("compact");
   const [updatingStatus, setUpdatingStatus] = useState(false);
 
   // AI Announcement Crafter & Pending Status State
@@ -448,9 +449,8 @@ export default function LeaderPageClient({ batchId, initialBatch }: Props) {
   const leaderPhone = batch?.hostPhone || activeOrders[0]?.customerPhone || "";
   const buildingName = batch?.buildingName || "ตึก M4";
 
-  // Compile Brief Order Text (Compact, deduplicated, easy to read)
-  // Compile Brief Order Text (3-Tier Clear Hierarchy: Board -> Order -> Menu Items)
-  const getCompiledOrderText = () => {
+  // Compile Order Text (supports Compact Mode and Detailed Mode)
+  const getCompiledOrderText = (mode: "compact" | "detailed" = manifestTextMode) => {
     if (!batch) return "";
     const mapUrl = isSelfPickup ? batch.shop.gmapUrl : getDropOffMapUrl(batch);
     const totalBoxes = activeOrders.reduce(
@@ -458,6 +458,39 @@ export default function LeaderPageClient({ batchId, initialBatch }: Props) {
       0
     );
 
+    // MODE 1: Compact Mode (Kitchen-friendly: 1 order = 1 line, pipe-separated, bullet)
+    if (mode === "compact") {
+      let lines: string[] = [];
+
+      activeOrders.forEach((o) => {
+        const items = o.items && o.items.length > 0
+          ? o.items
+          : [{ name: o.boxLabel || "อาหาร", price: o.totalAmount, quantity: 1, customNote: "" }];
+
+        const itemParts = items.map((it) => {
+          const qty = it.quantity || 1;
+          const note = it.customNote ? ` (${it.customNote})` : "";
+          return `${it.name}${note} x${qty}`;
+        });
+
+        lines.push(`• ${itemParts.join(" | ")}`);
+      });
+
+      // Contact & Confirmation at the end
+      const contactInfo = leaderLine || leaderPhone
+        ? `👑 ติดต่อ: ${leaderLine || "หัวหน้าตี้"}${leaderPhone ? ` (${leaderPhone})` : ""}`
+        : "";
+      const deliveryInfo = isSelfPickup
+        ? `📍 ร้าน: ${batch.shop.name} • รับเองหน้าร้าน`
+        : `📍 ร้าน: ${batch.shop.name} • ส่ง: ${buildingName} ชั้น 1`;
+
+      if (contactInfo) lines.push(`\n${contactInfo}`);
+      lines.push(deliveryInfo);
+
+      return lines.join("\n").trim();
+    }
+
+    // MODE 2: Detailed Mode (Comprehensive per-person breakdown)
     let txt = `🍱 [VEATEC] สรุปออเดอร์ร้าน ${batch.shop.name}\n`;
     if (isSelfPickup) {
       txt += `🚶 รับเองหน้าร้าน`;
@@ -662,7 +695,7 @@ export default function LeaderPageClient({ batchId, initialBatch }: Props) {
   // Button 1: Send Compiled Order Text directly to LINE Chat
   const handleSendTextToLine = async () => {
     if (!batch) return;
-    const shareText = getCompiledOrderText();
+    const shareText = getCompiledOrderText(manifestTextMode);
 
     try {
       await navigator.clipboard.writeText(shareText);
@@ -1691,25 +1724,51 @@ export default function LeaderPageClient({ batchId, initialBatch }: Props) {
                     />
                   </div>
 
-                  {/* Brief Text Preview Box */}
-                  <div className="rounded-xl bg-gray-50 border border-gray-200 p-3 space-y-1">
-                    <div className="flex items-center justify-between text-xs font-bold text-gray-700">
-                      <span>ข้อความสรุป:</span>
+                  {/* Brief Text Preview Box with Toggle */}
+                  <div className="rounded-xl bg-gray-50 border border-gray-200 p-3 space-y-2">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-gray-200/60 pb-2">
+                      {/* Toggle: Compact vs Detailed */}
+                      <div className="inline-flex rounded-lg bg-gray-200/70 p-0.5 text-xs font-bold">
+                        <button
+                          type="button"
+                          onClick={() => setManifestTextMode("compact")}
+                          className={`rounded-md px-2.5 py-1 transition-all cursor-pointer ${
+                            manifestTextMode === "compact"
+                              ? "bg-white text-purple-950 shadow-2xs font-black"
+                              : "text-gray-600 hover:text-gray-900"
+                          }`}
+                        >
+                          ⚡ ย่อส่งครัว (Compact)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setManifestTextMode("detailed")}
+                          className={`rounded-md px-2.5 py-1 transition-all cursor-pointer ${
+                            manifestTextMode === "detailed"
+                              ? "bg-white text-purple-950 shadow-2xs font-black"
+                              : "text-gray-600 hover:text-gray-900"
+                          }`}
+                        >
+                          📋 ละเอียดรายคน (Detailed)
+                        </button>
+                      </div>
+
                       <button
                         type="button"
                         onClick={async () => {
-                          await navigator.clipboard.writeText(getCompiledOrderText());
+                          await navigator.clipboard.writeText(getCompiledOrderText(manifestTextMode));
                           setCopiedText(true);
                           setTimeout(() => setCopiedText(false), 2000);
                         }}
-                        className="text-[11px] text-purple-700 hover:underline flex items-center gap-1 font-bold"
+                        className="text-[11px] text-purple-700 hover:underline flex items-center gap-1 font-bold shrink-0 self-end sm:self-auto cursor-pointer"
                       >
                         <Copy className="h-3 w-3" />
                         <span>{copiedText ? "✓ คัดลอกแล้ว" : "คัดลอกข้อความ"}</span>
                       </button>
                     </div>
-                    <pre className="text-[11px] font-sans text-gray-600 whitespace-pre-wrap leading-relaxed">
-                      {getCompiledOrderText()}
+
+                    <pre className="text-[11px] font-sans text-gray-800 whitespace-pre-wrap leading-relaxed max-h-60 overflow-y-auto">
+                      {getCompiledOrderText(manifestTextMode)}
                     </pre>
                   </div>
                 </div>
