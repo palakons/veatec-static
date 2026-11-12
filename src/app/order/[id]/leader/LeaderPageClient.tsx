@@ -470,7 +470,10 @@ export default function LeaderPageClient({ batchId, initialBatch }: Props) {
         const itemParts = items.map((it) => {
           const qty = it.quantity || 1;
           const note = it.customNote ? ` (${it.customNote})` : "";
-          return `${it.name}${note} x${qty}`;
+          const unitPrice = it.price > 0 ? it.price : Math.round(o.totalAmount / (items.length || 1));
+          const totalItemPrice = unitPrice * qty;
+          const priceStr = totalItemPrice > 0 ? ` (${totalItemPrice}฿)` : "";
+          return `${it.name}${note} x${qty}${priceStr}`;
         });
 
         lines.push(`• ${itemParts.join(" | ")}`);
