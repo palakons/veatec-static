@@ -58,32 +58,43 @@ export default function AIMenuSuggester({
     setIsRateLimited(false);
 
     try {
-      // In static mode, suggest from shop menu items matching keywords
+      // Fetch shop menu items from Firestore
       const shops = await getClientShops();
       const targetShop = shops.find((s: any) => s.id === shopId);
-      const items = (targetShop?.menuItems || []).filter((m: any) => m.isAvailable !== false);
+      const items = (targetShop?.menuItems || [])
+        .filter((m: any) => m.isAvailable !== false)
+        .map((m: any) => ({ name: m.name, price: m.price || 0 }));
 
-      const words = textToSubmit.toLowerCase().split(/\s+/);
-      const matched = items.filter((it: any) => {
-        const n = it.name.toLowerCase();
-        return words.some((w: string) => n.includes(w));
+      if (items.length === 0) {
+        setErrorMsg("ยังไม่มีรายการเมนูของร้านนี้ในระบบ");
+        return;
+      }
+
+      // Real AI Call to Cloud Function ThaiLLM Proxy (Zero fallback)
+      const res = await fetch("https://thaillmproxy-onlcrhe4ea-uc.a.run.app", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "recommend_dishes",
+          prompt: textToSubmit,
+          shopName,
+          shopMenus: items,
+        }),
       });
 
-      const selected = matched.length > 0 ? matched.slice(0, 3) : items.slice(0, 3);
-      if (selected.length > 0) {
-        setRecommendations(
-          selected.map((it: any, idx: number) => ({
-            name: it.name,
-            price: it.price || 50,
-            confidence: 0.95 - idx * 0.05,
-            reason: `เมนูยอดนิยมของร้าน ${shopName} ตรงกับความต้องการ "${textToSubmit}"`,
-          }))
-        );
+      if (!res.ok) {
+        throw new Error(`ThaiLLM API error (HTTP ${res.status})`);
+      }
+
+      const data = await res.json();
+      if (data.success && Array.isArray(data.recommendations) && data.recommendations.length > 0) {
+        setRecommendations(data.recommendations);
       } else {
-        setErrorMsg("ไม่พบเมนูที่เข้ากับคำค้นหา ลองระบุชื่อวัตถุดิบ เช่น ไก่, กะเพรา, ไข่ดาว");
+        setErrorMsg("AI ไม่สามารถวิเคราะห์เมนูที่ตรงกับความต้องการนี้ได้ กรุณาลองใหม่อีกครั้ง");
       }
     } catch (err: any) {
-      setErrorMsg("ไม่สามารถค้นหาเมนูแนะนำได้ในขณะนี้");
+      console.error("AI menu recommendation failed:", err);
+      setErrorMsg("ไม่สามารถติดต่อเซิร์ฟเวอร์ AI ได้ในขณะนี้ กรุณาลองใหม่อีกครั้ง");
     } finally {
       setIsLoading(false);
     }

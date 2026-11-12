@@ -319,18 +319,41 @@ export default function LeaderPageClient({ batchId, initialBatch }: Props) {
     return `\n\n🏪 ร้าน: ${shopName}\n👤 หัวหน้าตี้: ${leaderName}\n⏰ เวลา: ${orderTimeDisplay}\n📍 จุดส่ง: ${locName}\n🔗 ลิงก์กระดาน: ${boardUrl}`;
   };
 
-  // Craft Tactful Message via ThaiLLM
+  // Craft Tactful Message via Real ThaiLLM Cloud Function
   const handleCraftWithAi = async () => {
     if (!batch) return;
     setIsCraftingAi(true);
-    const currentActiveOrders = (batch.orders || []).filter((o) => !o.deletedAt);
-    const calculatedBoxes = currentActiveOrders.reduce(
-      (sum, ord) => sum + (ord.items?.reduce((s, it) => s + (it.quantity || 1), 0) || 0),
-      0
-    );
+    const shopName = batch.shop?.name || "ร้านอาหาร";
+    const situation = aiCustomNote.trim() || aiSituation || "อัปเดตสถานะออเดอร์";
 
     try {
-      handleGenerateTemplateMsg();
+      const res = await fetch("https://thaillmproxy-onlcrhe4ea-uc.a.run.app", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "craft_announcement",
+          shopName,
+          situation,
+          tone: aiTone,
+        }),
+      });
+
+      if (!res.ok) {
+        throw new Error(`ThaiLLM API error (HTTP ${res.status})`);
+      }
+
+      const data = await res.json();
+      if (data.success && data.message) {
+        const finalMsg = aiIncludeBoardInfo
+          ? `${data.message.trim()}${buildBoardInfoSnippet(batch)}`
+          : data.message.trim();
+        setCraftedMessage(finalMsg);
+      } else {
+        alert("ไม่สามารถเรียบเรียงข้อความด้วย AI ได้ในขณะนี้");
+      }
+    } catch (e: any) {
+      console.error("AI craft failed:", e);
+      alert("ไม่สามารถเชื่อมต่อ AI ได้ กรุณาลองใหม่อีกครั้ง");
     } finally {
       setIsCraftingAi(false);
     }
