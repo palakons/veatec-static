@@ -22,6 +22,7 @@ export async function fetchWithVeatecAuth(
   headers.set("x-veatec-secret", VEATEC_FUNCTIONS_CONFIG.appSecret);
 
   return fetch(url, {
+    keepalive: true,
     ...options,
     headers,
   });

@@ -639,10 +639,15 @@ export default function LeaderPageClient({ batchId, initialBatch }: Props) {
 
       if (ok) {
         // Trigger serverless LINE notification via Cloud Function (Protected with App Secret)
-        fetchWithVeatecAuth(VEATEC_FUNCTIONS_CONFIG.sendLineNotificationUrl, {
-          method: "POST",
-          body: JSON.stringify({ batchId: batch.id, type: "delivered" }),
-        }).catch((e) => console.warn("Cloud function line delivery notify error:", e));
+        try {
+          await fetchWithVeatecAuth(VEATEC_FUNCTIONS_CONFIG.sendLineNotificationUrl, {
+            method: "POST",
+            keepalive: true,
+            body: JSON.stringify({ batchId: batch.id, type: "delivered" }),
+          });
+        } catch (e) {
+          console.warn("Cloud function line delivery notify error:", e);
+        }
         confetti({ particleCount: 50, spread: 60, origin: { y: 0.8 } });
         alert("บันทึกส่งอาหารเรียบร้อยแล้ว! ระบบจะส่งแจ้งเตือนเข้ากลุ่ม LINE สำเร็จ 🎉");
         setShowDeliveryModal(false);
