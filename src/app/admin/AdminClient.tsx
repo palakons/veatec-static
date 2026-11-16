@@ -4792,46 +4792,46 @@ export default function AdminClient({
             >
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <label className="text-xs font-bold text-gray-700">หัวข้อการ์ด (Title) *</label>
+                  <label className="text-xs font-bold text-gray-800">หัวข้อการ์ด (Title) *</label>
                   <input
                     type="text"
                     required
                     value={editingPromoCard.title || ""}
                     onChange={(e) => setEditingPromoCard({ ...editingPromoCard, title: e.target.value })}
                     placeholder="เช่น วิธีสั่งอาหารใน 3 สเต็ป"
-                    className="w-full rounded-xl border border-gray-300 p-2 text-xs focus:border-purple-600 focus:outline-none"
+                    className="w-full rounded-xl border border-gray-300 bg-white p-2.5 text-xs font-medium text-gray-900 focus:border-purple-600 focus:outline-none focus:ring-1 focus:ring-purple-600 shadow-2xs"
                   />
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-xs font-bold text-gray-700">ป้ายกำกับ (Badge)</label>
+                  <label className="text-xs font-bold text-gray-800">ป้ายกำกับ (Badge)</label>
                   <input
                     type="text"
                     value={editingPromoCard.badge || ""}
                     onChange={(e) => setEditingPromoCard({ ...editingPromoCard, badge: e.target.value })}
                     placeholder="เช่น คู่มือ, แนะนำ, ข่าว"
-                    className="w-full rounded-xl border border-gray-300 p-2 text-xs focus:border-purple-600 focus:outline-none"
+                    className="w-full rounded-xl border border-gray-300 bg-white p-2.5 text-xs font-medium text-gray-900 focus:border-purple-600 focus:outline-none focus:ring-1 focus:ring-purple-600 shadow-2xs"
                   />
                 </div>
               </div>
 
               <div className="space-y-1">
-                <label className="text-xs font-bold text-gray-700">คำอธิบายย่อ (Subtitle)</label>
+                <label className="text-xs font-bold text-gray-800">คำอธิบายย่อ (Subtitle)</label>
                 <textarea
                   rows={2}
                   value={editingPromoCard.subtitle || ""}
                   onChange={(e) => setEditingPromoCard({ ...editingPromoCard, subtitle: e.target.value })}
                   placeholder="คำอธิบายสั้นๆ 1-2 ประโยค..."
-                  className="w-full rounded-xl border border-gray-300 p-2 text-xs focus:border-purple-600 focus:outline-none"
+                  className="w-full rounded-xl border border-gray-300 bg-white p-2.5 text-xs font-medium text-gray-900 focus:border-purple-600 focus:outline-none focus:ring-1 focus:ring-purple-600 shadow-2xs"
                 />
               </div>
 
               {/* Image Upload through Firebase Storage */}
-              <div className="space-y-1.5 p-3 rounded-2xl border border-purple-100 bg-purple-50/50">
+              <div className="space-y-1.5 p-3 rounded-2xl border border-purple-200 bg-purple-50/60">
                 <label className="text-xs font-bold text-purple-950 flex items-center justify-between">
                   <span>รูปภาพการ์ด (Firebase Storage)</span>
                   {uploadingPromoImg && (
-                    <span className="text-[10px] text-purple-700">กำลังอัปโหลด ({promoUploadProgress}%)...</span>
+                    <span className="text-[10px] text-purple-700 font-bold">กำลังอัปโหลด ({promoUploadProgress}%)...</span>
                   )}
                 </label>
 
@@ -4841,9 +4841,9 @@ export default function AdminClient({
                     value={editingPromoCard.imageUrl || ""}
                     onChange={(e) => setEditingPromoCard({ ...editingPromoCard, imageUrl: e.target.value })}
                     placeholder="URL รูป หรือกดปุ่มอัปโหลดรูปภาพ ➔"
-                    className="flex-1 rounded-xl border border-gray-300 bg-white p-2 text-xs focus:border-purple-600 focus:outline-none"
+                    className="flex-1 rounded-xl border border-gray-300 bg-white p-2.5 text-xs font-medium text-gray-900 focus:border-purple-600 focus:outline-none focus:ring-1 focus:ring-purple-600 shadow-2xs"
                   />
-                  <label className="cursor-pointer rounded-xl bg-purple-900 hover:bg-purple-800 text-white px-3 py-2 text-xs font-bold transition-colors shrink-0">
+                  <label className="cursor-pointer rounded-xl bg-purple-900 hover:bg-purple-800 text-white px-3.5 py-2.5 text-xs font-bold transition-colors shrink-0 shadow-2xs">
                     <Camera className="h-4 w-4 inline mr-1" />
                     <span>อัปโหลด</span>
                     <input
@@ -4875,11 +4875,11 @@ export default function AdminClient({
               {/* Action Type */}
               <div className="grid grid-cols-3 gap-2">
                 <div className="space-y-1">
-                  <label className="text-xs font-bold text-gray-700">เมื่อคลิกการ์ด (Action)</label>
+                  <label className="text-xs font-bold text-gray-800">เมื่อคลิกการ์ด (Action)</label>
                   <select
                     value={editingPromoCard.actionType || "modal"}
                     onChange={(e) => setEditingPromoCard({ ...editingPromoCard, actionType: e.target.value as any })}
-                    className="w-full rounded-xl border border-gray-300 p-2 text-xs focus:border-purple-600 focus:outline-none bg-white"
+                    className="w-full rounded-xl border border-gray-300 bg-white p-2.5 text-xs font-semibold text-gray-900 focus:border-purple-600 focus:outline-none focus:ring-1 focus:ring-purple-600 shadow-2xs"
                   >
                     <option value="modal">เปิดหน้าต่าง Modal</option>
                     <option value="link">เปิดลิงก์ URL ภายนอก</option>
@@ -4888,21 +4888,21 @@ export default function AdminClient({
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-xs font-bold text-gray-700">ลำดับการแสดงผล (Order)</label>
+                  <label className="text-xs font-bold text-gray-800">ลำดับ (Order)</label>
                   <input
                     type="number"
                     value={editingPromoCard.order ?? 0}
                     onChange={(e) => setEditingPromoCard({ ...editingPromoCard, order: Number(e.target.value) })}
-                    className="w-full rounded-xl border border-gray-300 p-2 text-xs focus:border-purple-600 focus:outline-none"
+                    className="w-full rounded-xl border border-gray-300 bg-white p-2.5 text-xs font-medium text-gray-900 focus:border-purple-600 focus:outline-none focus:ring-1 focus:ring-purple-600 shadow-2xs"
                   />
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-xs font-bold text-gray-700">สถานะ</label>
+                  <label className="text-xs font-bold text-gray-800">สถานะ</label>
                   <select
                     value={editingPromoCard.isActive ? "true" : "false"}
                     onChange={(e) => setEditingPromoCard({ ...editingPromoCard, isActive: e.target.value === "true" })}
-                    className="w-full rounded-xl border border-gray-300 p-2 text-xs focus:border-purple-600 focus:outline-none bg-white"
+                    className="w-full rounded-xl border border-gray-300 bg-white p-2.5 text-xs font-semibold text-gray-900 focus:border-purple-600 focus:outline-none focus:ring-1 focus:ring-purple-600 shadow-2xs"
                   >
                     <option value="true">เปิดใช้งาน</option>
                     <option value="false">ปิดชั่วคราว</option>
@@ -4912,26 +4912,26 @@ export default function AdminClient({
 
               {editingPromoCard.actionType === "link" && (
                 <div className="space-y-1">
-                  <label className="text-xs font-bold text-gray-700">URL ปลายทาง (Action Link)</label>
+                  <label className="text-xs font-bold text-gray-800">URL ปลายทาง (Action Link)</label>
                   <input
                     type="url"
                     value={editingPromoCard.actionUrl || ""}
                     onChange={(e) => setEditingPromoCard({ ...editingPromoCard, actionUrl: e.target.value })}
                     placeholder="https://..."
-                    className="w-full rounded-xl border border-gray-300 p-2 text-xs focus:border-purple-600 focus:outline-none"
+                    className="w-full rounded-xl border border-gray-300 bg-white p-2.5 text-xs font-medium text-gray-900 focus:border-purple-600 focus:outline-none focus:ring-1 focus:ring-purple-600 shadow-2xs"
                   />
                 </div>
               )}
 
               {editingPromoCard.actionType === "modal" && (
                 <div className="space-y-1">
-                  <label className="text-xs font-bold text-gray-700">เนื้อหาในหน้าต่าง Popup (Modal Text)</label>
+                  <label className="text-xs font-bold text-gray-800">เนื้อหาในหน้าต่าง Popup (Modal Text)</label>
                   <textarea
                     rows={3}
                     value={editingPromoCard.modalContent || ""}
                     onChange={(e) => setEditingPromoCard({ ...editingPromoCard, modalContent: e.target.value })}
                     placeholder="ข้อความอธิบายแบบละเอียด..."
-                    className="w-full rounded-xl border border-gray-300 p-2 text-xs focus:border-purple-600 focus:outline-none"
+                    className="w-full rounded-xl border border-gray-300 bg-white p-2.5 text-xs font-medium text-gray-900 focus:border-purple-600 focus:outline-none focus:ring-1 focus:ring-purple-600 shadow-2xs"
                   />
                 </div>
               )}
@@ -4939,22 +4939,22 @@ export default function AdminClient({
               {/* Start & End Dates */}
               <div className="grid grid-cols-2 gap-3 pt-1 border-t border-gray-100">
                 <div className="space-y-1">
-                  <label className="text-xs font-bold text-gray-700">วันเริ่มแสดง (Start Date)</label>
+                  <label className="text-xs font-bold text-gray-800">วันเริ่มแสดง (Start Date)</label>
                   <input
                     type="date"
                     value={editingPromoCard.startDate?.slice(0, 10) || ""}
                     onChange={(e) => setEditingPromoCard({ ...editingPromoCard, startDate: e.target.value })}
-                    className="w-full rounded-xl border border-gray-300 p-2 text-xs focus:border-purple-600 focus:outline-none bg-white"
+                    className="w-full rounded-xl border border-gray-300 bg-white p-2.5 text-xs font-medium text-gray-900 focus:border-purple-600 focus:outline-none focus:ring-1 focus:ring-purple-600 shadow-2xs"
                   />
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-xs font-bold text-gray-700">วันสิ้นสุด (End Date)</label>
+                  <label className="text-xs font-bold text-gray-800">วันสิ้นสุด (End Date)</label>
                   <input
                     type="date"
                     value={editingPromoCard.endDate?.slice(0, 10) || ""}
                     onChange={(e) => setEditingPromoCard({ ...editingPromoCard, endDate: e.target.value })}
-                    className="w-full rounded-xl border border-gray-300 p-2 text-xs focus:border-purple-600 focus:outline-none bg-white"
+                    className="w-full rounded-xl border border-gray-300 bg-white p-2.5 text-xs font-medium text-gray-900 focus:border-purple-600 focus:outline-none focus:ring-1 focus:ring-purple-600 shadow-2xs"
                   />
                 </div>
               </div>
