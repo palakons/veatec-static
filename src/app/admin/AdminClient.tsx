@@ -2,7 +2,7 @@
 
 import { doc, updateDoc, setDoc, deleteDoc, collection, getDocs } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import { getClientBatches, getClientShops, getClientDeliveryLocations, getClientSuggestions } from "@/lib/client-api";
+import { getClientBatches, getClientShops, getClientDeliveryLocations, getClientSuggestions, getClientPromoCards } from "@/lib/client-api";
 import { fetchWithVeatecAuth, VEATEC_FUNCTIONS_CONFIG } from "@/lib/functions-client";
 import { resolveImageUrl } from "@/lib/image-url";
 import { useState, useEffect, useMemo } from "react";
@@ -15,6 +15,7 @@ import {
   QuotaMetrics,
   StorageMetrics,
   SanitizedMenuItem,
+  PromoCard,
 } from "@/lib/types";
 import { formatCutoffDisplay, getThumbnailUrl } from "@/lib/utils";
 import { isFirebaseConfigured } from "@/lib/firebase";
@@ -455,7 +456,7 @@ export default function AdminClient({
   const [passcode, setPasscode] = useState("");
   const [passError, setPassError] = useState(false);
   const [activeTab, setActiveTab] = useState<
-    "orders" | "shops" | "desks" | "batches" | "suggestions" | "frequently_ordered" | "ai_sanitizer"
+    "orders" | "shops" | "desks" | "batches" | "suggestions" | "frequently_ordered" | "ai_sanitizer" | "promos"
   >("orders");
   const [orderShopFilter, setOrderShopFilter] = useState<string>("all");
   const [orderLocationFilter, setOrderLocationFilter] = useState<string>("all");
@@ -495,6 +496,14 @@ export default function AdminClient({
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [loadingSuggestions, setLoadingSuggestions] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  // Promo Cards State
+  const [adminPromoCards, setAdminPromoCards] = useState<PromoCard[]>([]);
+  const [loadingPromoCards, setLoadingPromoCards] = useState(false);
+  const [editingPromoCard, setEditingPromoCard] = useState<Partial<PromoCard> | null>(null);
+  const [uploadingPromoImg, setUploadingPromoImg] = useState(false);
+  const [promoUploadProgress, setPromoUploadProgress] = useState<number>(0);
+  const [promoMessage, setPromoMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   // LINE Notification Status State
   const [lineStatus, setLineStatus] = useState<{
@@ -757,6 +766,18 @@ export default function AdminClient({
       console.error("Error fetching suggestions:", e);
     } finally {
       setLoadingSuggestions(false);
+    }
+  };
+
+  const fetchAdminPromoCards = async () => {
+    try {
+      setLoadingPromoCards(true);
+      const data = await getClientPromoCards();
+      setAdminPromoCards(data.sort((a, b) => (a.order ?? 0) - (b.order ?? 0)));
+    } catch (e) {
+      console.error("Error fetching promo cards:", e);
+    } finally {
+      setLoadingPromoCards(false);
     }
   };
 
@@ -3305,6 +3326,21 @@ export default function AdminClient({
               </span>
             )}
           </button>
+
+          <button
+            onClick={() => {
+              setActiveTab("promos");
+              fetchAdminPromoCards();
+            }}
+            className={`pb-3 px-3.5 text-sm font-bold border-b-2 transition-colors whitespace-nowrap flex items-center gap-2 cursor-pointer ${
+              activeTab === "promos"
+                ? "border-purple-800 text-purple-900"
+                : "border-transparent text-gray-500 hover:text-gray-800"
+            }`}
+          >
+            <Sparkles className="h-4 w-4 text-purple-600" />
+            <span>การ์ดโฆษณา & ทริค ({adminPromoCards.length})</span>
+          </button>
         </div>
 
         {/* ========================================================= */}
@@ -4502,7 +4538,446 @@ export default function AdminClient({
           </div>
         )}
 
+        {/* ========================================================= */}
+        {/* TAB 7: PROMOTIONAL / ADS / TUTORIAL CARDS */}
+        {/* ========================================================= */}
+        {activeTab === "promos" && (
+          <div className="space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                  <Sparkles className="h-5 w-5 text-purple-600" />
+                  <span>จัดการการ์ดแนะนำ & โฆษณาด้านล่าง (Discovery Scroller)</span>
+                </h2>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  การ์ดรูปภาพที่แสดงผลด้านล่างสุดของเว็บ ผู้ใช้สามารถเลื่อนดูและกดคลิกได้ (รองรับกำหนดวันเริ่ม-สิ้นสุด, ลิงก์, หรือ Modal ข้อความ)
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={fetchAdminPromoCards}
+                  disabled={loadingPromoCards}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-bold text-gray-700 hover:bg-gray-50 transition-colors shadow-2xs cursor-pointer disabled:opacity-50"
+                >
+                  <RefreshCw className={`h-3.5 w-3.5 ${loadingPromoCards ? "animate-spin text-purple-600" : ""}`} />
+                  <span>รีเฟรช</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    setEditingPromoCard({
+                      id: `promo_${Date.now()}`,
+                      title: "",
+                      subtitle: "",
+                      badge: "ทริค",
+                      imageUrl: "",
+                      actionType: "modal",
+                      modalContent: "",
+                      actionUrl: "",
+                      isActive: true,
+                      order: adminPromoCards.length,
+                    })
+                  }
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-purple-900 hover:bg-purple-800 text-white px-3.5 py-2 text-xs font-bold transition-colors shadow-2xs cursor-pointer"
+                >
+                  <Plus className="h-4 w-4" />
+                  <span>เพิ่มการ์ดใหม่</span>
+                </button>
+              </div>
+            </div>
+
+            {promoMessage && (
+              <div
+                className={`p-3 rounded-xl text-xs font-bold flex items-center justify-between ${
+                  promoMessage.type === "success"
+                    ? "bg-emerald-50 text-emerald-800 border border-emerald-200"
+                    : "bg-rose-50 text-rose-800 border border-rose-200"
+                }`}
+              >
+                <span>{promoMessage.text}</span>
+                <button type="button" onClick={() => setPromoMessage(null)}>
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            )}
+
+            {loadingPromoCards ? (
+              <div className="p-8 text-center text-xs text-gray-500">
+                <div className="h-6 w-6 animate-spin rounded-full border-2 border-purple-800 border-t-transparent mx-auto mb-2" />
+                กำลังโหลดการ์ด...
+              </div>
+            ) : adminPromoCards.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-gray-300 p-8 text-center text-xs text-gray-500 space-y-2">
+                <p>ยังไม่มีการ์ดที่สร้างเองในระบบ (กำลังแสดงชุดตัวอย่างเริ่มต้น 4 ใบ)</p>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setEditingPromoCard({
+                      id: `promo_${Date.now()}`,
+                      title: "ตัวอย่าง: เมนูแนะนำสัปดาห์นี้",
+                      subtitle: "แวะสั่งร้านป้าต่ายหรือต้มเลือดหมู รวมตี้ส่งฟรี M4",
+                      badge: "แนะนำ",
+                      imageUrl: "/veatec-logo.png",
+                      actionType: "modal",
+                      modalContent: "รายละเอียดโปรโมชั่นหรือคำแนะนำ...",
+                      isActive: true,
+                      order: 0,
+                    })
+                  }
+                  className="inline-flex items-center gap-1 rounded-xl bg-purple-900 text-white px-3 py-1.5 font-bold hover:bg-purple-800"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  สร้างการ์ดแรกเลย
+                </button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {adminPromoCards.map((card) => {
+                  const displayImg = resolveImageUrl(card.imageUrl);
+                  return (
+                    <div
+                      key={card.id}
+                      className="rounded-2xl border border-gray-200 bg-white overflow-hidden shadow-xs flex flex-col justify-between"
+                    >
+                      <div>
+                        <div className="relative w-full aspect-[16/9] bg-slate-900 overflow-hidden">
+                          {displayImg ? (
+                            <img
+                              src={displayImg}
+                              alt={card.title}
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <div className="flex items-center justify-center h-full text-xs text-gray-400">
+                              ไม่มีรูปภาพ
+                            </div>
+                          )}
+                          {card.badge && (
+                            <span className="absolute top-2 left-2 text-[10px] font-black bg-purple-600 text-white px-2 py-0.5 rounded-full shadow-xs">
+                              {card.badge}
+                            </span>
+                          )}
+                          <span
+                            className={`absolute top-2 right-2 text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                              card.isActive
+                                ? "bg-emerald-500 text-white"
+                                : "bg-gray-500 text-white"
+                            }`}
+                          >
+                            {card.isActive ? "เปิดใช้งาน" : "ปิดชั่วคราว"}
+                          </span>
+                        </div>
+
+                        <div className="p-3.5 space-y-1">
+                          <h4 className="text-xs font-bold text-gray-900 line-clamp-1">
+                            {card.title}
+                          </h4>
+                          <p className="text-[11px] text-gray-500 line-clamp-2">
+                            {card.subtitle || "-"}
+                          </p>
+
+                          <div className="pt-2 text-[10px] text-gray-400 space-y-0.5">
+                            <div>ประเภทแอ็กชัน: <strong className="text-gray-700">{card.actionType}</strong></div>
+                            {(card.startDate || card.endDate) && (
+                              <div>
+                                วันที่: {card.startDate || "เริ่มทันที"} ➔ {card.endDate || "ไม่จำกัด"}
+                              </div>
+                            )}
+                            <div>ลำดับ: {card.order ?? 0}</div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="p-3 border-t border-gray-100 bg-gray-50/50 flex items-center justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setEditingPromoCard(card)}
+                          className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-2.5 py-1 text-xs font-bold text-gray-700 hover:bg-gray-100 transition-colors"
+                        >
+                          <Edit className="h-3 w-3" />
+                          แก้ไข
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            if (!confirm(`ต้องการลบการ์ด "${card.title}" หรือไม่?`)) return;
+                            try {
+                              if (isFirebaseConfigured && db) {
+                                await deleteDoc(doc(db, "promo_cards", card.id));
+                              }
+                              setPromoMessage({ type: "success", text: "ลบการ์ดเรียบร้อยแล้ว" });
+                              fetchAdminPromoCards();
+                            } catch (e: any) {
+                              setPromoMessage({ type: "error", text: e.message });
+                            }
+                          }}
+                          className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-bold text-rose-700 hover:bg-rose-100 transition-colors"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                          ลบ
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
       </main>
+
+      {/* ========================================================= */}
+      {/* MODAL 7: EDIT / ADD PROMO CARD */}
+      {/* ========================================================= */}
+      {editingPromoCard && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 overflow-y-auto">
+          <div className="relative w-full max-w-lg rounded-3xl border border-gray-200 bg-white p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+              <h3 className="text-base font-black text-gray-900 flex items-center gap-2">
+                <Sparkles className="h-5 w-5 text-purple-600" />
+                <span>{editingPromoCard.id && adminPromoCards.some((c) => c.id === editingPromoCard.id) ? "แก้ไขการ์ด" : "เพิ่มการ์ดใหม่"}</span>
+              </h3>
+              <button
+                type="button"
+                onClick={() => setEditingPromoCard(null)}
+                className="w-7 h-7 rounded-full bg-gray-100 hover:bg-gray-200 text-gray-600 flex items-center justify-center cursor-pointer"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                if (!editingPromoCard.title) {
+                  alert("กรุณากรอกหัวข้อการ์ด");
+                  return;
+                }
+                const cardId = editingPromoCard.id || `promo_${Date.now()}`;
+                const payload: PromoCard = {
+                  id: cardId,
+                  title: editingPromoCard.title.trim(),
+                  subtitle: editingPromoCard.subtitle?.trim() || "",
+                  badge: editingPromoCard.badge?.trim() || "",
+                  imageUrl: editingPromoCard.imageUrl?.trim() || "",
+                  actionType: (editingPromoCard.actionType as any) || "modal",
+                  actionUrl: editingPromoCard.actionUrl?.trim() || "",
+                  modalContent: editingPromoCard.modalContent || "",
+                  modalImageUrl: editingPromoCard.modalImageUrl?.trim() || "",
+                  startDate: editingPromoCard.startDate || "",
+                  endDate: editingPromoCard.endDate || "",
+                  isActive: editingPromoCard.isActive ?? true,
+                  order: Number(editingPromoCard.order ?? 0),
+                  createdAt: editingPromoCard.createdAt || new Date().toISOString(),
+                  updatedAt: new Date().toISOString(),
+                };
+
+                try {
+                  if (isFirebaseConfigured && db) {
+                    await setDoc(doc(db, "promo_cards", cardId), payload);
+                  }
+                  setPromoMessage({ type: "success", text: "บันทึกการ์ดเรียบร้อยแล้ว!" });
+                  setEditingPromoCard(null);
+                  fetchAdminPromoCards();
+                } catch (err: any) {
+                  alert("บันทึกไม่สำเร็จ: " + err.message);
+                }
+              }}
+              className="space-y-3.5"
+            >
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-gray-700">หัวข้อการ์ด (Title) *</label>
+                  <input
+                    type="text"
+                    required
+                    value={editingPromoCard.title || ""}
+                    onChange={(e) => setEditingPromoCard({ ...editingPromoCard, title: e.target.value })}
+                    placeholder="เช่น วิธีสั่งอาหารใน 3 สเต็ป"
+                    className="w-full rounded-xl border border-gray-300 p-2 text-xs focus:border-purple-600 focus:outline-none"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-gray-700">ป้ายกำกับ (Badge)</label>
+                  <input
+                    type="text"
+                    value={editingPromoCard.badge || ""}
+                    onChange={(e) => setEditingPromoCard({ ...editingPromoCard, badge: e.target.value })}
+                    placeholder="เช่น คู่มือ, แนะนำ, ข่าว"
+                    className="w-full rounded-xl border border-gray-300 p-2 text-xs focus:border-purple-600 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-gray-700">คำอธิบายย่อ (Subtitle)</label>
+                <textarea
+                  rows={2}
+                  value={editingPromoCard.subtitle || ""}
+                  onChange={(e) => setEditingPromoCard({ ...editingPromoCard, subtitle: e.target.value })}
+                  placeholder="คำอธิบายสั้นๆ 1-2 ประโยค..."
+                  className="w-full rounded-xl border border-gray-300 p-2 text-xs focus:border-purple-600 focus:outline-none"
+                />
+              </div>
+
+              {/* Image Upload through Firebase Storage */}
+              <div className="space-y-1.5 p-3 rounded-2xl border border-purple-100 bg-purple-50/50">
+                <label className="text-xs font-bold text-purple-950 flex items-center justify-between">
+                  <span>รูปภาพการ์ด (Firebase Storage)</span>
+                  {uploadingPromoImg && (
+                    <span className="text-[10px] text-purple-700">กำลังอัปโหลด ({promoUploadProgress}%)...</span>
+                  )}
+                </label>
+
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={editingPromoCard.imageUrl || ""}
+                    onChange={(e) => setEditingPromoCard({ ...editingPromoCard, imageUrl: e.target.value })}
+                    placeholder="URL รูป หรือกดปุ่มอัปโหลดรูปภาพ ➔"
+                    className="flex-1 rounded-xl border border-gray-300 bg-white p-2 text-xs focus:border-purple-600 focus:outline-none"
+                  />
+                  <label className="cursor-pointer rounded-xl bg-purple-900 hover:bg-purple-800 text-white px-3 py-2 text-xs font-bold transition-colors shrink-0">
+                    <Camera className="h-4 w-4 inline mr-1" />
+                    <span>อัปโหลด</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        try {
+                          setUploadingPromoImg(true);
+                          const compressed = await compressImage(file, 1200, 0.85);
+                          const res = await uploadDirectToStorage("general", compressed, `promo_${Date.now()}.jpg`, (pct) => {
+                            setPromoUploadProgress(pct);
+                          });
+                          setEditingPromoCard((prev) => ({ ...prev, imageUrl: res.directUrl }));
+                        } catch (err: any) {
+                          alert("อัปโหลดไม่สำเร็จ: " + err.message);
+                        } finally {
+                          setUploadingPromoImg(false);
+                          setPromoUploadProgress(0);
+                        }
+                      }}
+                    />
+                  </label>
+                </div>
+              </div>
+
+              {/* Action Type */}
+              <div className="grid grid-cols-3 gap-2">
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-gray-700">เมื่อคลิกการ์ด (Action)</label>
+                  <select
+                    value={editingPromoCard.actionType || "modal"}
+                    onChange={(e) => setEditingPromoCard({ ...editingPromoCard, actionType: e.target.value as any })}
+                    className="w-full rounded-xl border border-gray-300 p-2 text-xs focus:border-purple-600 focus:outline-none bg-white"
+                  >
+                    <option value="modal">เปิดหน้าต่าง Modal</option>
+                    <option value="link">เปิดลิงก์ URL ภายนอก</option>
+                    <option value="open_board">เปิดตี้ใหม่ทันที</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-gray-700">ลำดับการแสดงผล (Order)</label>
+                  <input
+                    type="number"
+                    value={editingPromoCard.order ?? 0}
+                    onChange={(e) => setEditingPromoCard({ ...editingPromoCard, order: Number(e.target.value) })}
+                    className="w-full rounded-xl border border-gray-300 p-2 text-xs focus:border-purple-600 focus:outline-none"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-gray-700">สถานะ</label>
+                  <select
+                    value={editingPromoCard.isActive ? "true" : "false"}
+                    onChange={(e) => setEditingPromoCard({ ...editingPromoCard, isActive: e.target.value === "true" })}
+                    className="w-full rounded-xl border border-gray-300 p-2 text-xs focus:border-purple-600 focus:outline-none bg-white"
+                  >
+                    <option value="true">เปิดใช้งาน</option>
+                    <option value="false">ปิดชั่วคราว</option>
+                  </select>
+                </div>
+              </div>
+
+              {editingPromoCard.actionType === "link" && (
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-gray-700">URL ปลายทาง (Action Link)</label>
+                  <input
+                    type="url"
+                    value={editingPromoCard.actionUrl || ""}
+                    onChange={(e) => setEditingPromoCard({ ...editingPromoCard, actionUrl: e.target.value })}
+                    placeholder="https://..."
+                    className="w-full rounded-xl border border-gray-300 p-2 text-xs focus:border-purple-600 focus:outline-none"
+                  />
+                </div>
+              )}
+
+              {editingPromoCard.actionType === "modal" && (
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-gray-700">เนื้อหาในหน้าต่าง Popup (Modal Text)</label>
+                  <textarea
+                    rows={3}
+                    value={editingPromoCard.modalContent || ""}
+                    onChange={(e) => setEditingPromoCard({ ...editingPromoCard, modalContent: e.target.value })}
+                    placeholder="ข้อความอธิบายแบบละเอียด..."
+                    className="w-full rounded-xl border border-gray-300 p-2 text-xs focus:border-purple-600 focus:outline-none"
+                  />
+                </div>
+              )}
+
+              {/* Start & End Dates */}
+              <div className="grid grid-cols-2 gap-3 pt-1 border-t border-gray-100">
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-gray-700">วันเริ่มแสดง (Start Date)</label>
+                  <input
+                    type="date"
+                    value={editingPromoCard.startDate?.slice(0, 10) || ""}
+                    onChange={(e) => setEditingPromoCard({ ...editingPromoCard, startDate: e.target.value })}
+                    className="w-full rounded-xl border border-gray-300 p-2 text-xs focus:border-purple-600 focus:outline-none bg-white"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-gray-700">วันสิ้นสุด (End Date)</label>
+                  <input
+                    type="date"
+                    value={editingPromoCard.endDate?.slice(0, 10) || ""}
+                    onChange={(e) => setEditingPromoCard({ ...editingPromoCard, endDate: e.target.value })}
+                    className="w-full rounded-xl border border-gray-300 p-2 text-xs focus:border-purple-600 focus:outline-none bg-white"
+                  />
+                </div>
+              </div>
+
+              <div className="pt-3 border-t border-gray-100 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingPromoCard(null)}
+                  className="rounded-xl border border-gray-300 px-4 py-2 text-xs font-bold text-gray-700 hover:bg-gray-100 transition-colors"
+                >
+                  ยกเลิก
+                </button>
+                <button
+                  type="submit"
+                  className="rounded-xl bg-purple-900 hover:bg-purple-800 text-white px-5 py-2 text-xs font-bold transition-colors shadow-md"
+                >
+                  บันทึกลงฐานข้อมูล
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* ========================================================= */}
       {/* MODAL 6: EDIT SANITIZED MENU NAME */}

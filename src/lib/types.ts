@@ -197,4 +197,23 @@ export interface AutocompleteMenuItem {
   isShopMenu?: boolean;
 }
 
+export interface PromoCard {
+  id: string;
+  title: string;
+  subtitle?: string;
+  badge?: string; // e.g. "Tutorial", "New", "Tip", "LINE", "Bonus"
+  imageUrl: string;
+  actionType: "link" | "modal" | "open_board"; // link to external URL, open modal with content/img, or trigger open board modal
+  actionUrl?: string; // URL for external link
+  modalContent?: string; // Markdown/text content for modal
+  modalImageUrl?: string; // Larger high-res image for modal if any
+  startDate?: string; // ISO string or YYYY-MM-DD
+  endDate?: string; // ISO string or YYYY-MM-DD
+  isActive: boolean;
+  order: number; // Sorting weight (0, 1, 2...)
+  createdAt: string;
+  updatedAt?: string;
+}
+
+
 

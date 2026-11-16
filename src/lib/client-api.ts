@@ -142,3 +142,15 @@ export async function getClientSuggestions(): Promise<any[]> {
   }
   return [];
 }
+
+export async function getClientPromoCards(): Promise<any[]> {
+  if (isFirebaseConfigured && db) {
+    try {
+      const snap = await getDocs(collection(db, "promo_cards"));
+      return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    } catch (err) {
+      console.warn("getClientPromoCards error:", err);
+    }
+  }
+  return [];
+}

@@ -2,12 +2,13 @@ import { resolveImageUrl, resolveShopPromptPayQr } from "@/lib/image-url";
 "use client";
 
 import { createClientOrder, deleteClientOrder, createClientBatch, updateClientBatchStatus } from "@/lib/client-order-service";
-import { getClientDeliveryLocations, getClientShops, getClientBatches } from "@/lib/client-api";
+import { getClientDeliveryLocations, getClientShops, getClientBatches, getClientPromoCards } from "@/lib/client-api";
 import { useEffect, useState, useRef, useMemo, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Navbar from "@/components/Navbar";
-import { BatchWithDetails, Order, Shop } from "@/lib/types";
+import PromoScroller from "@/components/PromoScroller";
+import { BatchWithDetails, Order, Shop, PromoCard } from "@/lib/types";
 import {
   CAMPUS_LOCATIONS,
   DeliveryLocation,
@@ -637,6 +638,9 @@ export default function HomeClient({ initialBatches, initialLocations }: Props) 
   // Consolidated Menu Suggestions Tab: null (collapsed) | "SHOP" | "FRIENDS" | "AI" (Default to "SHOP" as requested by users)
   const [activeSuggestionTab, setActiveSuggestionTab] = useState<"SHOP" | "FRIENDS" | "AI" | null>("SHOP");
 
+  // Promo / Tutorial / Ads Cards State
+  const [promoCards, setPromoCards] = useState<PromoCard[]>([]);
+
   const fetchLocations = async () => {
     try {
       const locs = await getClientDeliveryLocations();
@@ -696,14 +700,18 @@ export default function HomeClient({ initialBatches, initialLocations }: Props) 
   const fetchBatches = async (fresh = false) => {
     try {
       if (fresh) setIsRefreshing(true);
-      const [batchesList, locs] = await Promise.all([
+      const [batchesList, locs, promoList] = await Promise.all([
         getClientBatches(),
         getClientDeliveryLocations(),
+        getClientPromoCards().catch(() => []),
       ]);
       setBatches(batchesList);
       if (locs && locs.length > 0) {
         setLocations(locs);
         setRuntimeLocations(locs);
+      }
+      if (promoList && promoList.length > 0) {
+        setPromoCards(promoList);
       }
       try {
         localStorage.setItem("veatec_cached_batches", JSON.stringify(batchesList));
@@ -3267,6 +3275,13 @@ export default function HomeClient({ initialBatches, initialLocations }: Props) 
             )}
           </div>
         ) : null}
+
+        {/* Lowest Scroller: Non-blocking Promos, Tutorials & Discovery Cards */}
+        <PromoScroller
+          cards={promoCards}
+          onOpenBoardClick={handleOpenBoardClick}
+          lang={lang}
+        />
       </main>
 
       {/* MODAL 1: PromptPay QR */}
