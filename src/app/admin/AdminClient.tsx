@@ -4925,13 +4925,16 @@ export default function AdminClient({
 
               {editingPromoCard.actionType === "modal" && (
                 <div className="space-y-1">
-                  <label className="text-xs font-bold text-gray-800">เนื้อหาในหน้าต่าง Popup (Modal Text)</label>
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-gray-800">เนื้อหาในหน้าต่าง Popup (รองรับ HTML / Markdown)</label>
+                    <span className="text-[10px] text-purple-700 font-semibold">รองรับ &lt;b&gt;, &lt;p&gt;, &lt;a&gt;, &lt;ul&gt;, &lt;img&gt;</span>
+                  </div>
                   <textarea
-                    rows={3}
+                    rows={4}
                     value={editingPromoCard.modalContent || ""}
                     onChange={(e) => setEditingPromoCard({ ...editingPromoCard, modalContent: e.target.value })}
-                    placeholder="ข้อความอธิบายแบบละเอียด..."
-                    className="w-full rounded-xl border border-gray-300 bg-white p-2.5 text-xs font-medium text-gray-900 focus:border-purple-600 focus:outline-none focus:ring-1 focus:ring-purple-600 shadow-2xs"
+                    placeholder="ใส่ข้อความ หรือ HTML เช่น <p>โปรโมชั่นพิเศษ <b>ลด 10%</b></p> หรือ <a href='...'>กดที่นี่</a>"
+                    className="w-full rounded-xl border border-gray-300 bg-white p-2.5 text-xs font-medium text-gray-900 focus:border-purple-600 focus:outline-none focus:ring-1 focus:ring-purple-600 shadow-2xs font-mono"
                   />
                 </div>
               )}

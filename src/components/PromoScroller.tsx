@@ -347,9 +347,18 @@ export default function PromoScroller({
               )}
 
               {activeModalCard.modalContent && (
-                <div className="text-xs text-slate-700 leading-relaxed whitespace-pre-wrap bg-slate-50 p-4 rounded-xl border border-slate-100">
-                  {activeModalCard.modalContent}
-                </div>
+                <div
+                  className="text-xs text-slate-700 leading-relaxed bg-slate-50 p-4 rounded-xl border border-slate-100 prose prose-xs max-w-none prose-p:my-1.5 prose-headings:font-bold prose-headings:text-slate-900 prose-ul:my-1 prose-li:my-0.5 prose-a:text-purple-700 prose-a:underline hover:prose-a:text-purple-900"
+                  dangerouslySetInnerHTML={{
+                    __html: activeModalCard.modalContent.includes("<") && activeModalCard.modalContent.includes(">")
+                      ? activeModalCard.modalContent
+                      : activeModalCard.modalContent
+                          .replace(/\n\n/g, "<br/><br/>")
+                          .replace(/\n/g, "<br/>")
+                          .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
+                          .replace(/• (.*?)(?:<br\/>|$)/g, "• $1<br/>")
+                  }}
+                />
               )}
             </div>
 
