@@ -1,6 +1,6 @@
-import { resolveImageUrl, resolveShopPromptPayQr } from "@/lib/image-url";
 "use client";
 
+import { resolveImageUrl, resolveShopPromptPayQr } from "@/lib/image-url";
 import { createClientOrder, deleteClientOrder, createClientBatch, updateClientBatchStatus } from "@/lib/client-order-service";
 import { getClientDeliveryLocations, getClientShops, getClientBatches, getClientPromoCards } from "@/lib/client-api";
 import { useEffect, useState, useRef, useMemo, useCallback } from "react";
