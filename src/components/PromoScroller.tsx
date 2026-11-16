@@ -1,9 +1,9 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { PromoCard } from "@/lib/types";
 import { resolveImageUrl } from "@/lib/image-url";
-import { ExternalLink, Sparkles, X, ChevronRight, HelpCircle, Flame, Gift } from "lucide-react";
+import { ExternalLink, Sparkles, X, ChevronRight, ChevronLeft, HelpCircle, Flame, Gift } from "lucide-react";
 
 interface PromoScrollerProps {
   cards: PromoCard[];
@@ -70,6 +70,15 @@ export default function PromoScroller({
   lang = "th",
 }: PromoScrollerProps) {
   const [activeModalCard, setActiveModalCard] = useState<PromoCard | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
+
+  // Mouse drag-to-scroll states
+  const [isDragging, setIsDragging] = useState(false);
+  const [startX, setStartX] = useState(0);
+  const [scrollLeftPos, setScrollLeftPos] = useState(0);
+  const [dragMoved, setDragMoved] = useState(false);
 
   // Filter cards by active status and start/stop dates
   const now = new Date().toISOString();
@@ -80,9 +89,67 @@ export default function PromoScroller({
     return true;
   }).sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
 
+  const checkScroll = () => {
+    if (scrollRef.current) {
+      const { scrollLeft, scrollWidth, clientWidth } = scrollRef.current;
+      setCanScrollLeft(scrollLeft > 10);
+      setCanScrollRight(scrollLeft + clientWidth < scrollWidth - 10);
+    }
+  };
+
+  useEffect(() => {
+    checkScroll();
+    window.addEventListener("resize", checkScroll);
+    return () => window.removeEventListener("resize", checkScroll);
+  }, [validCards.length]);
+
+  const scrollByAmount = (amount: number) => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollBy({ left: amount, behavior: "smooth" });
+    }
+  };
+
+  // Mouse wheel horizontal scroll handler
+  const handleWheel = (e: React.WheelEvent) => {
+    if (scrollRef.current && Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+      if (
+        (e.deltaY > 0 && canScrollRight) ||
+        (e.deltaY < 0 && canScrollLeft)
+      ) {
+        scrollRef.current.scrollLeft += e.deltaY;
+      }
+    }
+  };
+
+  // Mouse Drag handlers
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (!scrollRef.current) return;
+    setIsDragging(true);
+    setStartX(e.pageX - scrollRef.current.offsetLeft);
+    setScrollLeftPos(scrollRef.current.scrollLeft);
+    setDragMoved(false);
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (!isDragging || !scrollRef.current) return;
+    e.preventDefault();
+    const x = e.pageX - scrollRef.current.offsetLeft;
+    const walk = (x - startX) * 1.5;
+    if (Math.abs(walk) > 5) {
+      setDragMoved(true);
+    }
+    scrollRef.current.scrollLeft = scrollLeftPos - walk;
+    checkScroll();
+  };
+
+  const handleMouseUpOrLeave = () => {
+    setIsDragging(false);
+  };
+
   if (validCards.length === 0) return null;
 
   const handleCardClick = (card: PromoCard) => {
+    if (dragMoved) return; // Prevent clicking if user was dragging
     if (card.actionType === "open_board") {
       if (onOpenBoardClick) {
         onOpenBoardClick();
@@ -111,7 +178,7 @@ export default function PromoScroller({
 
   return (
     <div className="w-full mt-10 pt-8 border-t border-slate-200/80 mb-6">
-      {/* Header */}
+      {/* Header with Navigation Arrows */}
       <div className="flex items-center justify-between mb-3 px-1">
         <div>
           <div className="flex items-center gap-1.5">
@@ -124,13 +191,49 @@ export default function PromoScroller({
             {sectionSubtitle}
           </p>
         </div>
-        <span className="text-[10px] font-bold text-purple-800 bg-purple-50 px-2 py-0.5 rounded-full border border-purple-200">
-          {validCards.length} {lang === "en" ? "Items" : "รายการ"}
-        </span>
+
+        <div className="flex items-center gap-1.5">
+          <span className="text-[10px] font-bold text-purple-800 bg-purple-50 px-2 py-0.5 rounded-full border border-purple-200 hidden sm:inline-block">
+            {validCards.length} {lang === "en" ? "Items" : "รายการ"}
+          </span>
+
+          {/* Left Arrow Button */}
+          <button
+            type="button"
+            onClick={() => scrollByAmount(-280)}
+            disabled={!canScrollLeft}
+            aria-label="Scroll left"
+            className="w-7 h-7 rounded-full border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 flex items-center justify-center transition-all disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer shadow-2xs active:scale-95"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+
+          {/* Right Arrow Button */}
+          <button
+            type="button"
+            onClick={() => scrollByAmount(280)}
+            disabled={!canScrollRight}
+            aria-label="Scroll right"
+            className="w-7 h-7 rounded-full border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 flex items-center justify-center transition-all disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer shadow-2xs active:scale-95"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </button>
+        </div>
       </div>
 
-      {/* Horizontal Snap Scroller */}
-      <div className="flex gap-3.5 overflow-x-auto pb-4 pt-1 snap-x snap-mandatory scrollbar-none -mx-4 px-4 sm:mx-0 sm:px-0">
+      {/* Horizontal Snap Scroller with Mouse Drag & Wheel */}
+      <div
+        ref={scrollRef}
+        onScroll={checkScroll}
+        onWheel={handleWheel}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUpOrLeave}
+        onMouseLeave={handleMouseUpOrLeave}
+        className={`flex gap-3.5 overflow-x-auto pb-4 pt-1 snap-x snap-mandatory scrollbar-thin scrollbar-thumb-purple-200 scrollbar-track-transparent -mx-4 px-4 sm:mx-0 sm:px-0 select-none ${
+          isDragging ? "cursor-grabbing" : "cursor-grab"
+        }`}
+      >
         {validCards.map((card) => {
           const displayImg = resolveImageUrl(card.imageUrl);
           return (
