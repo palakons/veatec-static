@@ -1,10 +1,5 @@
 "use client";
 
-import { doc, updateDoc, setDoc, deleteDoc, collection, getDocs } from "firebase/firestore";
-import { db } from "@/lib/firebase";
-import { getClientBatches, getClientShops, getClientDeliveryLocations, getClientSuggestions, getClientPromoCards } from "@/lib/client-api";
-import { fetchWithVeatecAuth, VEATEC_FUNCTIONS_CONFIG } from "@/lib/functions-client";
-import { resolveImageUrl } from "@/lib/image-url";
 import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import {
@@ -15,7 +10,6 @@ import {
   QuotaMetrics,
   StorageMetrics,
   SanitizedMenuItem,
-  PromoCard,
 } from "@/lib/types";
 import { formatCutoffDisplay, getThumbnailUrl } from "@/lib/utils";
 import { isFirebaseConfigured } from "@/lib/firebase";
@@ -68,7 +62,10 @@ import {
   ListOrdered,
   Eye,
   Bot,
+  Radio,
 } from "lucide-react";
+import { collection, query, orderBy, limit, onSnapshot } from "firebase/firestore";
+import { db } from "@/lib/firebase";
 import { CAMPUS_LOCATIONS, DeliveryLocation } from "@/lib/locations";
 import { compressImage, uploadDirectToStorage } from "@/lib/services";
 import { DAYS_OF_WEEK, formatOpenDaysText, getBangkokDayOfWeek } from "@/lib/shop-utils";
@@ -287,7 +284,7 @@ function ShopAdminCard({
                 title="คลิกเพื่อขยายดู QR LINE ขนาดใหญ่"
               >
                 <img
-                  src={resolveImageUrl(shop.lineQrUrl) || ""}
+                  src={shop.lineQrUrl}
                   alt={`LINE QR ${shop.name}`}
                   className="h-full w-full object-contain"
                   loading="lazy"
@@ -456,7 +453,7 @@ export default function AdminClient({
   const [passcode, setPasscode] = useState("");
   const [passError, setPassError] = useState(false);
   const [activeTab, setActiveTab] = useState<
-    "orders" | "shops" | "desks" | "batches" | "suggestions" | "frequently_ordered" | "ai_sanitizer" | "promos"
+    "orders" | "shops" | "desks" | "batches" | "suggestions" | "frequently_ordered" | "ai_sanitizer" | "line_bridge"
   >("orders");
   const [orderShopFilter, setOrderShopFilter] = useState<string>("all");
   const [orderLocationFilter, setOrderLocationFilter] = useState<string>("all");
@@ -497,14 +494,6 @@ export default function AdminClient({
   const [loadingSuggestions, setLoadingSuggestions] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  // Promo Cards State
-  const [adminPromoCards, setAdminPromoCards] = useState<PromoCard[]>([]);
-  const [loadingPromoCards, setLoadingPromoCards] = useState(false);
-  const [editingPromoCard, setEditingPromoCard] = useState<Partial<PromoCard> | null>(null);
-  const [uploadingPromoImg, setUploadingPromoImg] = useState(false);
-  const [promoUploadProgress, setPromoUploadProgress] = useState<number>(0);
-  const [promoMessage, setPromoMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
-
   // LINE Notification Status State
   const [lineStatus, setLineStatus] = useState<{
     hasToken: boolean;
@@ -531,6 +520,50 @@ export default function AdminClient({
 
   // Collapsible toggle for LINE Notification Pane (Default: Collapsed)
   const [isLinePaneOpen, setIsLinePaneOpen] = useState(false);
+
+  // LINE Bridge / Community Feed State (Friendly non-scary bridge)
+  const [bridgeLogs, setBridgeLogs] = useState<any[]>([]);
+  const [bridgeOrders, setBridgeOrders] = useState<any[]>([]);
+  const [loadingBridge, setLoadingBridge] = useState(false);
+
+  // Subscribe to LINE Bridge data when tab is active
+  useEffect(() => {
+    if (activeTab !== "line_bridge" || !db) return;
+    setLoadingBridge(true);
+
+    const logsQuery = query(collection(db, "line_ingest_logs"), orderBy("createdAt", "desc"), limit(40));
+    const unsubscribeLogs = onSnapshot(
+      logsQuery,
+      (snapshot) => {
+        const items: any[] = [];
+        snapshot.forEach((doc) => items.push({ id: doc.id, ...doc.data() }));
+        setBridgeLogs(items);
+        setLoadingBridge(false);
+      },
+      (error) => {
+        console.warn("line_ingest_logs listener error:", error);
+        setLoadingBridge(false);
+      }
+    );
+
+    const ordersQuery = query(collection(db, "line_order_tracking"), orderBy("createdAt", "desc"), limit(40));
+    const unsubscribeOrders = onSnapshot(
+      ordersQuery,
+      (snapshot) => {
+        const items: any[] = [];
+        snapshot.forEach((doc) => items.push({ id: doc.id, ...doc.data() }));
+        setBridgeOrders(items);
+      },
+      (error) => {
+        console.warn("line_order_tracking listener error:", error);
+      }
+    );
+
+    return () => {
+      unsubscribeLogs();
+      unsubscribeOrders();
+    };
+  }, [activeTab]);
 
   // Collapsible toggle for ThaiLLM Monitor Pane (Default: Collapsed)
   const [isLlmPaneOpen, setIsLlmPaneOpen] = useState(false);
@@ -612,29 +645,10 @@ export default function AdminClient({
   const [refreshingStatus, setRefreshingStatus] = useState(false);
   const [cleaningStorage, setCleaningStorage] = useState(false);
 
-  // Cloud Functions Live Status
-  const [isFunctionsPaneOpen, setIsFunctionsPaneOpen] = useState(true);
-  const [testingFunctions, setTestingFunctions] = useState(false);
-  const [functionsStatus, setFunctionsStatus] = useState<any>({
-    region: "us-central1",
-    runtime: "Node.js 22 (2nd Gen)",
-    services: [
-      {
-        name: "sendLineNotification",
-        type: "HTTP Webhook",
-        url: "https://us-central1-one-order-af750.cloudfunctions.net/sendLineNotification",
-        status: "ACTIVE",
-        role: "LINE Push (New Board & Food Delivered strictly)",
-      },
-      {
-        name: "thaillmProxy",
-        type: "HTTP Proxy",
-        url: "https://thaillmproxy-onlcrhe4ea-uc.a.run.app",
-        status: "ACTIVE",
-        role: "ThaiLLM Typo Correction & Menu Suggestion",
-      },
-    ],
-  });
+  // Vercel Live Quota & Project Status
+  const [vercelStatus, setVercelStatus] = useState<any>(null);
+  const [loadingVercel, setLoadingVercel] = useState(false);
+  const [isVercelPaneOpen, setIsVercelPaneOpen] = useState(true);
 
   // Shop Add/Edit Modal State
   const [showShopModal, setShowShopModal] = useState(false);
@@ -693,12 +707,11 @@ export default function AdminClient({
 
   useEffect(() => {
     fetchSystemStatus();
-    
+    fetchVercelStatus();
     try {
       const isAuth = sessionStorage.getItem("veatec_admin_auth");
       if (isAuth === "true") {
         setIsAuthenticated(true);
-        refreshData();
         fetchSuggestions();
         fetchLocations();
         fetchLineStatus();
@@ -710,58 +723,140 @@ export default function AdminClient({
     }
   }, []);
 
-  const handlePingFunctions = async () => {
-    setTestingFunctions(true);
+  const fetchVercelStatus = async () => {
     try {
-      const res = await fetchWithVeatecAuth(VEATEC_FUNCTIONS_CONFIG.thaillmProxyUrl, {
-        method: "POST",
-        body: JSON.stringify({ action: "sanitize_single", dishName: "ทดสอบ" }),
-      });
-      if (res.ok) {
-        alert("✅ Cloud Functions ทำงานปกติ ตอบสนองและเชื่อมต่อกับ ThaiLLM สมบูรณ์!");
-      } else {
-        alert("⚠️ Cloud Functions ตอบกลับสถานะ " + res.status);
+      setLoadingVercel(true);
+      const res = await fetch("/api/system/vercel");
+      const data = await res.json();
+      if (data.success) {
+        setVercelStatus(data);
       }
-    } catch (e: any) {
-      alert("❌ ไม่สามารถเชื่อมต่อ Cloud Functions: " + e.message);
+    } catch (e) {
+      console.warn("fetchVercelStatus error", e);
     } finally {
-      setTestingFunctions(false);
+      setLoadingVercel(false);
     }
   };
 
   const fetchSystemStatus = async () => {
-    // In static mode, bypass /api/system/status
-    setRefreshingStatus(false);
+    try {
+      setRefreshingStatus(true);
+      const res = await fetch("/api/system/status");
+      const data = await res.json();
+      if (data.success && data.status) {
+        setSystemStatus(data.status);
+      }
+    } catch (e) {
+      console.warn("fetchSystemStatus error", e);
+    } finally {
+      setRefreshingStatus(false);
+    }
   };
 
   const handleProbeFirebase = async () => {
     try {
       setRefreshingStatus(true);
-      if (db) {
-        alert("✅ ตรวจสอบสำเร็จ: โควตา Google Cloud Firestore ใช้งานได้ปกติและเชื่อมต่อสมบูรณ์ (Direct Firestore SDK)");
+      const res = await fetch("/api/system/status", { method: "POST" });
+      const data = await res.json();
+      if (data.success && data.status) {
+        setSystemStatus(data.status);
+        if (!data.status.quotaExhausted) {
+          alert("✅ ตรวจสอบสำเร็จ: โควตา Google Cloud Firestore ใช้งานได้ปกติและเชื่อมต่อสมบูรณ์!");
+        } else {
+          alert("⚠️ โควตารายวันยังถูกจำกัด ระบบเปิดใช้งาน Local High-Availability Fallback อัตโนมัติ");
+        }
       }
+    } catch (e: any) {
+      alert("เกิดข้อผิดพลาดในการทดสอบ: " + (e.message || "Unknown error"));
     } finally {
       setRefreshingStatus(false);
     }
   };
 
   const handleResetMetrics = async () => {
-    alert("ระบบ Static Mode ดึงข้อมูลผ่าน Firebase Client SDK โดยตรง ไม่มีการจำกัดตัวนับภายในโฮสต์");
+    if (!confirm("ต้องการรีเซ็ตตัวนับการเรียกใช้งาน Firestore ประจำวันนี้หรือไม่?")) return;
+    try {
+      setRefreshingStatus(true);
+      const res = await fetch("/api/system/status", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "reset_metrics" }),
+      });
+      const data = await res.json();
+      if (data.success && data.status) {
+        setSystemStatus(data.status);
+        alert("✅ รีเซ็ตตัวนับ Request รายวันเรียบร้อยแล้ว");
+      }
+    } catch (e: any) {
+      alert("เกิดข้อผิดพลาด: " + (e.message || "Unknown error"));
+    } finally {
+      setRefreshingStatus(false);
+    }
   };
 
   const handleCleanupStorage = async () => {
-    alert("ไฟล์ภาพสลิปและภาพจัดส่งถูกจัดเก็บบน Google Firebase Storage CDN โดยตรงแล้ว");
+    if (
+      !confirm(
+        "ยืนยันการล้างสลิปโอนเงินและรูปถ่ายจัดส่งที่เก่าเกิน 1 เดือน (30 วัน) หรือไม่?\n\n• ข้อมูลออเดอร์และยอดเงินจะยังคงอยู่ครบถ้วน\n• เฉพาะภาพถ่ายและรูปสลิปเก่าจะถูกเคลียร์เพื่อประหยัดพื้นที่จัดเก็บ"
+      )
+    ) {
+      return;
+    }
+
+    try {
+      setCleaningStorage(true);
+      const res = await fetch("/api/system/status", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "cleanup_storage", retentionDays: 30 }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        if (data.status) setSystemStatus(data.status);
+        alert(
+          `✅ ล้างข้อมูลและไฟล์ภาพเก่าสำเร็จ!\n` +
+          `• สลิปที่ลบออก: ${data.result?.slipsPurged ?? 0} รายการ\n` +
+          `• ภาพถ่ายจัดส่งที่ลบออก: ${data.result?.photosPurged ?? 0} รายการ\n` +
+          `• รอบสั่งอาหารที่อาร์ไคฟ์: ${data.result?.batchesArchived ?? 0} รอบ\n` +
+          `• คืนพื้นที่จัดเก็บประมาณ: ~${((data.result?.estimatedBytesFreed ?? 0) / 1024).toFixed(1)} KB`
+        );
+      } else {
+        alert("⚠️ การล้างไฟล์ไม่สำเร็จ: " + (data.message || data.error || "Unknown error"));
+      }
+    } catch (e: any) {
+      alert("เกิดข้อผิดพลาดในการล้างไฟล์: " + (e.message || "Unknown error"));
+    } finally {
+      setCleaningStorage(false);
+    }
   };
 
   const handleRefreshStorage = async () => {
-    setRefreshingStatus(false);
+    try {
+      setRefreshingStatus(true);
+      const res = await fetch("/api/system/status", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "refresh_storage" }),
+      });
+      const data = await res.json();
+      if (data.success && data.status) {
+        setSystemStatus(data.status);
+      }
+    } catch (e: any) {
+      alert("เกิดข้อผิดพลาดในการตรวจสอบพื้นที่: " + (e.message || "Unknown error"));
+    } finally {
+      setRefreshingStatus(false);
+    }
   };
 
   const fetchSuggestions = async () => {
     try {
       setLoadingSuggestions(true);
-      const data = await getClientSuggestions();
-      setSuggestions(data);
+      const res = await fetch("/api/suggestions");
+      const data = await res.json();
+      if (data.success) {
+        setSuggestions(data.suggestions);
+      }
     } catch (e) {
       console.error("Error fetching suggestions:", e);
     } finally {
@@ -769,23 +864,13 @@ export default function AdminClient({
     }
   };
 
-  const fetchAdminPromoCards = async () => {
-    try {
-      setLoadingPromoCards(true);
-      const data = await getClientPromoCards();
-      setAdminPromoCards(data.sort((a, b) => (a.order ?? 0) - (b.order ?? 0)));
-    } catch (e) {
-      console.error("Error fetching promo cards:", e);
-    } finally {
-      setLoadingPromoCards(false);
-    }
-  };
-
   const fetchLocations = async (fresh = false) => {
     try {
-      const locs = await getClientDeliveryLocations();
-      if (Array.isArray(locs) && locs.length > 0) {
-        setLocations(locs);
+      const url = fresh ? "/api/locations?fresh=true" : "/api/locations";
+      const res = await fetch(url, { cache: fresh ? "no-store" : "default" });
+      const data = await res.json();
+      if (data.success && data.locations) {
+        setLocations(data.locations);
       }
     } catch (e) {
       console.warn("Error fetching locations:", e);
@@ -793,57 +878,114 @@ export default function AdminClient({
   };
 
   const fetchLineStatus = async () => {
-    // In static mode, provide static mock status to eliminate 404
-    setLineStatus({
-      hasToken: true,
-      envGroupId: "Cde4a9c739118f0c8414bbd2ecdf6ab01",
-      envUserId: null,
-      activeGroupIds: ["Cde4a9c739118f0c8414bbd2ecdf6ab01"],
-    });
-    setLoadingLine(false);
+    try {
+      setLoadingLine(true);
+      const res = await fetch("/api/line/status");
+      const data = await res.json();
+      if (data.success) {
+        setLineStatus(data);
+      }
+    } catch (e) {
+      console.error("Error fetching LINE status:", e);
+    } finally {
+      setLoadingLine(false);
+    }
   };
 
   const handleTestLinePush = async (targetId?: string) => {
-    setTestingLine(true);
     try {
-      const res = await fetchWithVeatecAuth(VEATEC_FUNCTIONS_CONFIG.sendLineNotificationUrl, {
+      setTestingLine(true);
+      setLineTestResult(null);
+      const res = await fetch("/api/line/status", {
         method: "POST",
-        body: JSON.stringify({ action: "test_push" }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ targetId }),
       });
-      if (res.ok) {
-        setLineTestResult({ success: true, message: "✅ ส่งข้อความทดสอบเข้ากลุ่ม LINE ผ่าน Cloud Function สำเร็จเรียบร้อยแล้ว!" });
-        alert("✅ ส่งข้อความทดสอบเข้ากลุ่ม LINE ผ่าน Cloud Function สำเร็จ!");
+      const data = await res.json();
+      if (data.success) {
+        setLineTestResult({ success: true, message: data.message });
       } else {
-        const text = await res.text();
-        setLineTestResult({ success: false, message: `⚠️ เกิดข้อผิดพลาด (${res.status}): ${text}` });
-        alert(`⚠️ ส่งไม่สำเร็จ (${res.status}): ${text}`);
+        setLineTestResult({ success: false, message: data.error || "ส่งข้อความไม่สำเร็จ" });
       }
     } catch (e: any) {
-      setLineTestResult({ success: false, message: `❌ ไม่สามารถเชื่อมต่อ Cloud Function: ${e.message}` });
-      alert(`❌ ไม่สามารถเชื่อมต่อ Cloud Function: ${e.message}`);
+      setLineTestResult({ success: false, message: e.message || "เกิดข้อผิดพลาดในการเชื่อมต่อ" });
     } finally {
       setTestingLine(false);
     }
   };
 
   const handleSendBroadcast = async () => {
-    alert("ระบบปิดการบรอดแคสต์แบบอิสระ เพื่อรักษาเฉพาะ 2 การแจ้งเตือนหลักตามนโยบาย");
+    if (!customBroadcastMsg.trim()) return;
+    try {
+      setSendingBroadcast(true);
+      const res = await fetch("/api/line/status", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "broadcast",
+          message: customBroadcastMsg.trim(),
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        alert("📢 ส่งข้อความประกาศเข้า LINE เรียบร้อยแล้ว!");
+        setCustomBroadcastMsg("");
+      } else {
+        alert("เกิดข้อผิดพลาด: " + (data.error || "ไม่สามารถส่งประกาศได้"));
+      }
+    } catch (e: any) {
+      alert("Error: " + e.message);
+    } finally {
+      setSendingBroadcast(false);
+    }
   };
 
   const handleAddManualGroup = async () => {
-    alert("Group ID ปัจจุบันผูกไว้กับ Cde4a9c739118f0c8414bbd2ecdf6ab01");
+    const cleanId = manualGroupId.trim();
+    if (!cleanId) return;
+    try {
+      setAddingGroupId(true);
+      const res = await fetch("/api/line/status", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "add", groupId: cleanId }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        alert("เพิ่ม Group ID เรียบร้อยแล้ว!");
+        setManualGroupId("");
+        fetchLineStatus();
+      } else {
+        alert("เกิดข้อผิดพลาด: " + data.error);
+      }
+    } catch (e: any) {
+      alert("Error: " + e.message);
+    } finally {
+      setAddingGroupId(false);
+    }
   };
 
   const handleRemoveGroup = async (gid: string) => {
-    alert("Group ID เป็นระบบคงที่");
+    if (!confirm(`ต้องการลบ Group ID ${gid} ออกจากระบบใช่หรือไม่?`)) return;
+    try {
+      const res = await fetch("/api/line/status", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "remove", groupId: gid }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        fetchLineStatus();
+      }
+    } catch (e: any) {
+      alert("Error: " + e.message);
+    }
   };
 
   const handleDeleteSuggestion = async (id: string) => {
     if (!confirm("ต้องการลบข้อเสนอแนะนี้ใช่หรือไม่?")) return;
     try {
-      if (db) {
-        await deleteDoc(doc(db, "suggestions", id));
-      }
+      await fetch(`/api/suggestions?id=${id}`, { method: "DELETE" });
       setSuggestions((prev) => prev.filter((s) => s.id !== id));
     } catch (e) {
       console.error("Failed to delete suggestion", e);
@@ -868,7 +1010,6 @@ export default function AdminClient({
       } catch (err) {}
       setIsAuthenticated(true);
       setPassError(false);
-      refreshData();
       fetchSuggestions();
       fetchLocations();
       fetchLineStatus();
@@ -887,14 +1028,18 @@ export default function AdminClient({
 
   const refreshData = async () => {
     try {
-      const [batchesData, shopsData, locsData] = await Promise.all([
-        getClientBatches(),
-        getClientShops(),
-        getClientDeliveryLocations(),
+      const [batchesRes, shopsRes, locsRes] = await Promise.all([
+        fetch("/api/batches?role=host&fresh=true"),
+        fetch("/api/shops"),
+        fetch("/api/locations"),
       ]);
-      if (Array.isArray(batchesData)) setBatches(batchesData);
-      if (Array.isArray(shopsData)) setShops(shopsData);
-      if (Array.isArray(locsData)) setLocations(locsData);
+      const batchesData = await batchesRes.json();
+      const shopsData = await shopsRes.json();
+      const locsData = await locsRes.json();
+
+      if (batchesData.success) setBatches(batchesData.batches);
+      if (shopsData.success) setShops(shopsData.shops);
+      if (locsData.success && locsData.locations) setLocations(locsData.locations);
     } catch (err) {
       console.error("Failed to refresh data:", err);
     }
@@ -909,15 +1054,22 @@ export default function AdminClient({
         finalReason = inputReason.trim() || "แอดมินยกเลิกกระดาน";
       }
 
-      if (db) {
-        await updateDoc(doc(db, "batches", batchId), {
+      const res = await fetch(`/api/batches/${batchId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer m4-admin",
+        },
+        body: JSON.stringify({
           status: newStatus,
-          cancelReason: finalReason || "",
-          updatedAt: new Date().toISOString(),
-        });
+          cancelReason: finalReason,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
         refreshData();
       } else {
-        alert("ฐานข้อมูลไม่พร้อมใช้งาน");
+        alert(data.error || "ไม่สามารถเปลี่ยนสถานะได้");
       }
     } catch (e) {
       alert("เกิดข้อผิดพลาดในการเปลี่ยนสถานะ");
@@ -927,14 +1079,19 @@ export default function AdminClient({
   const handleToggleBatchTest = async (batchId: string, currentIsTest: boolean) => {
     try {
       setTogglingBatchTestId(batchId);
-      if (db) {
-        await updateDoc(doc(db, "batches", batchId), {
-          isTest: !currentIsTest,
-          updatedAt: new Date().toISOString(),
-        });
+      const res = await fetch(`/api/batches/${batchId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer m4-admin",
+        },
+        body: JSON.stringify({ isTest: !currentIsTest }),
+      });
+      const data = await res.json();
+      if (data.success) {
         refreshData();
       } else {
-        alert("ฐานข้อมูลไม่พร้อมใช้งาน");
+        alert(data.error || "ไม่สามารถเปลี่ยนสถานะ Test ได้");
       }
     } catch (e) {
       alert("เกิดข้อผิดพลาดในการเปลี่ยนสถานะ Test");
@@ -1003,18 +1160,43 @@ export default function AdminClient({
   const handleDeleteShop = async (id: string, name: string) => {
     if (!confirm(`คุณแน่ใจว่าต้องการลบร้าน "${name}" ออกจากระบบ?`)) return;
     try {
-      if (db) {
-        await deleteDoc(doc(db, "shops", id));
+      const res = await fetch(`/api/shops?id=${id}`, { method: "DELETE" });
+      const data = await res.json();
+      if (data.success) {
+        setShops((prev) => prev.filter((s) => s.id !== id));
+        alert(`ลบร้าน "${name}" เรียบร้อยแล้ว`);
+      } else {
+        alert(data.error || "Failed to delete shop");
       }
-      setShops((prev) => prev.filter((s) => s.id !== id));
-      alert(`ลบร้าน "${name}" เรียบร้อยแล้ว`);
     } catch (e: any) {
       alert("Error: " + e.message);
     }
   };
 
   const handleSyncShopHours = async (shopId: string, shopName: string) => {
-    alert(`ข้อมูลเวลาเปิดร้าน "${shopName}" บันทึกและดึงจาก Firestore เรียบร้อยแล้ว`);
+    try {
+      setSyncingShopHoursId(shopId);
+      const res = await fetch(`/api/shops/${shopId}/sync-hours`, { method: "POST" });
+      const data = await res.json();
+      const openingHours = data.googleOpeningHours || data.shop?.googleOpeningHours;
+      if (data.success && (openingHours || data.shop)) {
+        setShops((prev) =>
+          prev.map((s) => (s.id === shopId ? { ...s, ...(data.shop || {}), googleOpeningHours: openingHours } : s))
+        );
+        if (editingShopId === shopId && data.shop?.openDays) {
+          setShopOpenDays(data.shop.openDays);
+        }
+        const bkkDay = getBangkokDayOfWeek();
+        const todayDesc = openingHours?.weekdayDescriptions?.[bkkDay === 0 ? 6 : bkkDay - 1];
+        alert(`✅ ซิงค์เวลาจาก Google Maps สำหรับร้าน "${shopName}" สำเร็จ!\n\n📍 เวลาเปิดวันนี้: ${todayDesc || "ไม่ระบุ"}\n(ข้อมูลถูกบันทึกและแคชเพื่อประหยัดโควตา Free Tier เรียบร้อยแล้ว)`);
+      } else {
+        alert(`⚠️ ไม่สามารถซิงค์เวลาได้: ${data.error || data.message || "ไม่พบข้อมูลบน Google Maps"}`);
+      }
+    } catch (err: any) {
+      alert(`เกิดข้อผิดพลาดในการเชื่อมต่อ Google Places API: ${err.message}`);
+    } finally {
+      setSyncingShopHoursId(null);
+    }
   };
 
   const handleToggleShopActive = async (shop: Shop) => {
@@ -1024,15 +1206,22 @@ export default function AdminClient({
 
     try {
       setTogglingShopActiveId(shop.id);
-      if (db) {
-        await updateDoc(doc(db, "shops", shop.id), {
+      const res = await fetch("/api/shops", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...shop,
           isActive: nextActive,
-          updatedAt: new Date().toISOString(),
-        });
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setShops((prev) =>
+          prev.map((s) => (s.id === shop.id ? { ...s, isActive: nextActive } : s))
+        );
+      } else {
+        alert(data.error || "เกิดข้อผิดพลาดในการเปลี่ยนสถานะร้านค้า");
       }
-      setShops((prev) =>
-        prev.map((s) => (s.id === shop.id ? { ...s, isActive: nextActive } : s))
-      );
     } catch (err: any) {
       alert("Error: " + err.message);
     } finally {
@@ -1094,18 +1283,14 @@ export default function AdminClient({
         })),
       };
 
-      const shopId = editingShopId || `shop-${Date.now()}`;
-      const fullShopDoc = {
-        ...payload,
-        id: shopId,
-        createdAt: editingShopId ? undefined : new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-      Object.keys(fullShopDoc).forEach(k => (fullShopDoc as any)[k] === undefined && delete (fullShopDoc as any)[k]);
+      const res = await fetch("/api/shops", {
+        method: editingShopId ? "PUT" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
 
-      if (db) {
-        await setDoc(doc(db, "shops", shopId), fullShopDoc, { merge: true });
-      }
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error);
 
       alert(editingShopId ? `แก้ไขร้าน "${shopName}" สำเร็จ!` : `เพิ่มร้าน "${shopName}" เข้าสู่ระบบสำเร็จ!`);
       setShowShopModal(false);
@@ -1387,18 +1572,25 @@ export default function AdminClient({
 
     setAddingMenuItemShopId(dish.shopId + dish.name);
     try {
-      if (db) {
-        await updateDoc(doc(db, "shops", dish.shopId), {
+      const res = await fetch("/api/shops", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...targetShop,
           menuItems: updatedMenuItems,
-          updatedAt: new Date().toISOString(),
-        });
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setShops((prev) =>
+          prev.map((s) => (s.id === dish.shopId ? { ...s, menuItems: updatedMenuItems } : s))
+        );
+        alert(
+          `เพิ่มเมนู "${dish.name}" เข้าเป็นเมนูแนะนำของร้าน "${targetShop.name}" เรียบร้อยแล้ว!\nเมนูนี้จะขึ้นใน "แตะเลือกเมนูแนะนำของร้าน" บนหน้ากระดานให้ลูกค้ากดเลือกได้ทันที`
+        );
+      } else {
+        alert(data.error || "บันทึกไม่สำเร็จ");
       }
-      setShops((prev) =>
-        prev.map((s) => (s.id === dish.shopId ? { ...s, menuItems: updatedMenuItems } : s))
-      );
-      alert(
-        `เพิ่มเมนู "${dish.name}" เข้าเป็นเมนูแนะนำของร้าน "${targetShop.name}" เรียบร้อยแล้ว!\nเมนูนี้จะขึ้นใน "แตะเลือกเมนูแนะนำของร้าน" บนหน้ากระดานให้ลูกค้ากดเลือกได้ทันที`
-      );
     } catch (e) {
       alert("เกิดข้อผิดพลาดในการบันทึก");
     } finally {
@@ -1411,60 +1603,16 @@ export default function AdminClient({
   // -------------------------------------------------------------
   const fetchLlmStatus = async () => {
     setLoadingLlmStatus(true);
-    const startTime = Date.now();
     try {
-      const res = await fetchWithVeatecAuth(VEATEC_FUNCTIONS_CONFIG.thaillmProxyUrl, {
-        method: "POST",
-        body: JSON.stringify({ action: "sanitize_single", dishName: "ทดสอบ" }),
-      });
-      const latencyMs = Date.now() - startTime;
+      const res = await fetch("/api/thaillm/status");
       if (res.ok) {
-        setLlmStatus({
-          online: true,
-          latencyMs,
-          status: "ready",
-          configured: true,
-          config: {
-            model: "openthaigpt-thaillm-8b-instruct-v7.2",
-            apiUrl: "https://thaillmproxy-onlcrhe4ea-uc.a.run.app",
-            consumerId: "c-vistec",
-            rateLimit: "120 rpm",
-            hasKey: true,
-            maskedKey: "K25Cnc...2pQe",
-            temperature: 0.2,
-            maxTokens: 512,
-            reasoningMode: "direct",
-          },
-          telemetry: {
-            rateLimitHits: 0,
-            lastRateLimitIso: null,
-          },
-        } as any);
-      } else {
-        setLlmStatus({
-          online: false,
-          latencyMs,
-          status: "error",
-          error: `HTTP ${res.status}`,
-          configured: true,
-          config: {
-            model: "openthaigpt-thaillm-8b-instruct-v7.2",
-            apiUrl: "https://thaillmproxy-onlcrhe4ea-uc.a.run.app",
-          },
-        } as any);
+        const data = await res.json();
+        if (data.success) {
+          setLlmStatus(data);
+        }
       }
-    } catch (e: any) {
-      setLlmStatus({
-        online: false,
-        latencyMs: Date.now() - startTime,
-        status: "error",
-        error: e.message,
-        configured: true,
-        config: {
-          model: "openthaigpt-thaillm-8b-instruct-v7.2",
-          apiUrl: "https://thaillmproxy-onlcrhe4ea-uc.a.run.app",
-        },
-      } as any);
+    } catch (e) {
+      console.warn("Failed to fetch ThaiLLM status:", e);
     } finally {
       setLoadingLlmStatus(false);
     }
@@ -1473,43 +1621,20 @@ export default function AdminClient({
   const handleTestInteractiveLlm = async () => {
     if (!interactiveTestInput.trim() || testingInteractiveLlm) return;
     setTestingInteractiveLlm(true);
-    const startTime = Date.now();
     try {
-      const cleanInput = interactiveTestInput.trim();
-      const res = await fetchWithVeatecAuth(VEATEC_FUNCTIONS_CONFIG.thaillmProxyUrl, {
+      const res = await fetch("/api/thaillm/status", {
         method: "POST",
-        body: JSON.stringify({
-          action: "sanitize_single",
-          dishName: cleanInput,
-        }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dishName: interactiveTestInput.trim() }),
       });
-
-      const latencyMs = Date.now() - startTime;
-
       if (res.ok) {
         const data = await res.json();
-        setInteractiveTestResult({
-          original: cleanInput,
-          sanitized: data.sanitized || cleanInput,
-          hasTypo: Boolean(data.hasTypo),
-          latencyMs,
-        });
-      } else {
-        setInteractiveTestResult({
-          original: cleanInput,
-          sanitized: cleanInput,
-          hasTypo: false,
-          latencyMs,
-        });
+        if (data.success) {
+          setInteractiveTestResult(data);
+        }
       }
-    } catch (e: any) {
-      console.warn("Live test failed:", e);
-      setInteractiveTestResult({
-        original: interactiveTestInput.trim(),
-        sanitized: interactiveTestInput.trim(),
-        hasTypo: false,
-        latencyMs: Date.now() - startTime,
-      });
+    } catch (e) {
+      console.warn("Interactive LLM test error:", e);
     } finally {
       setTestingInteractiveLlm(false);
     }
@@ -1521,19 +1646,19 @@ export default function AdminClient({
   const fetchSanitizedMenus = async () => {
     setLoadingSanitizer(true);
     try {
-      if (db) {
-        const snap = await getDocs(collection(db, "sanitized_menus"));
-        const map: Record<string, SanitizedMenuItem> = {};
-        snap.forEach((d) => {
-          const it = d.data() as SanitizedMenuItem;
-          if (it && it.shopId && it.originalName) {
+      const res = await fetch("/api/menu-sanitizer");
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && Array.isArray(data.items)) {
+          const map: Record<string, SanitizedMenuItem> = {};
+          data.items.forEach((it: SanitizedMenuItem) => {
             map[`${it.shopId}___${it.originalName.trim()}`] = it;
-          }
-        });
-        setSanitizedRecords(map);
+          });
+          setSanitizedRecords(map);
+        }
       }
     } catch (e) {
-      console.warn("Failed to fetch sanitized menus directly from Firestore:", e);
+      console.warn("Failed to fetch sanitized menus:", e);
     } finally {
       setLoadingSanitizer(false);
     }
@@ -1545,35 +1670,44 @@ export default function AdminClient({
     setSanitizerMessage(null);
 
     try {
-      const updated: Record<string, SanitizedMenuItem> = { ...sanitizedRecords };
-      for (const dish of frequentlyOrderedDishes) {
-        const key = `${dish.shopId}___${dish.dishName.trim()}`;
-        const cleanName = dish.dishName.trim();
-        const record: SanitizedMenuItem = {
-          id: key,
-          shopId: dish.shopId,
-          shopName: dish.shopName,
-          originalName: cleanName,
-          sanitizedName: cleanName,
-          amount: dish.totalQuantity,
-          hasTypo: false,
-          source: "manual",
-          updatedAt: new Date().toISOString(),
-        };
-        updated[key] = record;
-        if (db) {
-          await setDoc(doc(db, "sanitized_menus", key), record, { merge: true });
-        }
-      }
-      setSanitizedRecords(updated);
-      setSanitizerMessage({
-        type: "success",
-        text: `บันทึกรายการเมนูเข้าฐานข้อมูลเรียบร้อยแล้ว (${frequentlyOrderedDishes.length} เมนู)`,
+      const itemsToSanitize = frequentlyOrderedDishes.map((dish) => ({
+        shopId: dish.shopId,
+        shopName: dish.shopName,
+        originalName: dish.dishName,
+        amount: dish.totalQuantity,
+      }));
+
+      const res = await fetch("/api/menu-sanitizer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "sanitize", items: itemsToSanitize }),
       });
+
+      if (!res.ok) {
+        throw new Error("HTTP " + res.status);
+      }
+
+      const data = await res.json();
+      if (data.success && Array.isArray(data.items)) {
+        setSanitizedRecords((prev) => {
+          const updated = { ...prev };
+          data.items.forEach((it: SanitizedMenuItem) => {
+            updated[`${it.shopId}___${it.originalName.trim()}`] = it;
+          });
+          return updated;
+        });
+
+        setSanitizerMessage({
+          type: "success",
+          text: `สแกนด้วย ThaiLLM เรียบร้อยแล้ว (${data.totalProcessed} เมนู, พบและแก้ไขคำผิด ${data.typosCount} เมนู)`,
+        });
+      } else {
+        throw new Error(data.error || "Unknown error");
+      }
     } catch (err: any) {
       setSanitizerMessage({
         type: "error",
-        text: `เกิดข้อผิดพลาด: ${err.message}`,
+        text: `เกิดข้อผิดพลาดในการเรียก ThaiLLM: ${err.message}`,
       });
     } finally {
       setIsSanitizingAll(false);
@@ -1589,50 +1723,25 @@ export default function AdminClient({
     const key = `${dish.shopId}___${dish.dishName.trim()}`;
     setSanitizingSingleKey(key);
     try {
-      const cleanName = dish.dishName.trim();
-      let sanitizedName = cleanName;
-      let hasTypo = false;
+      const res = await fetch("/api/menu-sanitizer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "sanitize_single",
+          shopId: dish.shopId,
+          shopName: dish.shopName,
+          originalName: dish.dishName,
+          amount: dish.totalQuantity,
+        }),
+      });
 
-      // Call live Cloud Function ThaiLLM Proxy (Protected with App Secret)
-      try {
-        const res = await fetchWithVeatecAuth(VEATEC_FUNCTIONS_CONFIG.thaillmProxyUrl, {
-          method: "POST",
-          body: JSON.stringify({
-            action: "sanitize_single",
-            dishName: cleanName,
-          }),
-        });
-        if (res.ok) {
-          const data = await res.json();
-          if (data.success && data.sanitized) {
-            sanitizedName = data.sanitized;
-            hasTypo = Boolean(data.hasTypo);
-          }
-        }
-      } catch (e) {
-        console.warn("ThaiLLM cloud function call failed, using default:", e);
+      const data = await res.json();
+      if (data.success && data.item) {
+        setSanitizedRecords((prev) => ({
+          ...prev,
+          [key]: data.item,
+        }));
       }
-
-      const record: SanitizedMenuItem = {
-        id: key,
-        shopId: dish.shopId,
-        shopName: dish.shopName,
-        originalName: cleanName,
-        sanitizedName,
-        amount: dish.totalQuantity,
-        hasTypo,
-        source: "thaillm",
-        updatedAt: new Date().toISOString(),
-      };
-
-      if (db) {
-        await setDoc(doc(db, "sanitized_menus", key), record, { merge: true });
-      }
-
-      setSanitizedRecords((prev) => ({
-        ...prev,
-        [key]: record,
-      }));
     } catch (err) {
       console.warn("Single sanitize error:", err);
     } finally {
@@ -1647,34 +1756,35 @@ export default function AdminClient({
   ) => {
     if (!newSanitizedName.trim()) return;
     try {
-      if (db) {
-        await setDoc(
-          doc(db, "sanitized_menus", recordId),
-          {
-            sanitizedName: newSanitizedName.trim(),
-            hasTypo: originalName.trim() !== newSanitizedName.trim(),
-            source: "manual",
-            updatedAt: new Date().toISOString(),
-          },
-          { merge: true }
-        );
-      }
-      setSanitizedRecords((prev) => {
-        const updated = { ...prev };
-        for (const k in updated) {
-          if (updated[k].id === recordId) {
-            updated[k] = {
-              ...updated[k],
-              sanitizedName: newSanitizedName.trim(),
-              hasTypo: originalName.trim() !== newSanitizedName.trim(),
-              source: "manual",
-              updatedAt: new Date().toISOString(),
-            };
-          }
-        }
-        return updated;
+      const res = await fetch("/api/menu-sanitizer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "update_manual",
+          id: recordId,
+          originalName,
+          sanitizedName: newSanitizedName.trim(),
+        }),
       });
-      setEditingSanitizedItem(null);
+
+      if (res.ok) {
+        setSanitizedRecords((prev) => {
+          const updated = { ...prev };
+          for (const k in updated) {
+            if (updated[k].id === recordId) {
+              updated[k] = {
+                ...updated[k],
+                sanitizedName: newSanitizedName.trim(),
+                hasTypo: originalName.trim() !== newSanitizedName.trim(),
+                source: "manual",
+                updatedAt: new Date().toISOString(),
+              };
+            }
+          }
+          return updated;
+        });
+        setEditingSanitizedItem(null);
+      }
     } catch (err) {
       console.warn("Manual save error:", err);
     }
@@ -1753,15 +1863,22 @@ export default function AdminClient({
 
     try {
       setTogglingLocationActiveId(loc.id);
-      if (db) {
-        await updateDoc(doc(db, "locations", loc.id), {
+      const res = await fetch("/api/locations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...loc,
           isActive: nextActive,
-          updatedAt: new Date().toISOString(),
-        });
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setLocations((prev) =>
+          prev.map((l) => (l.id === loc.id ? { ...l, isActive: nextActive } : l))
+        );
+      } else {
+        alert(data.error || "Failed to update location status");
       }
-      setLocations((prev) =>
-        prev.map((l) => (l.id === loc.id ? { ...l, isActive: nextActive } : l))
-      );
     } catch (err: any) {
       alert("Error: " + err.message);
     } finally {
@@ -1772,11 +1889,14 @@ export default function AdminClient({
   const handleDeleteLocation = async (id: string, name: string) => {
     if (!confirm(`คุณแน่ใจว่าต้องการลบจุดส่ง "${name}" ออกจากระบบ?`)) return;
     try {
-      if (db) {
-        await deleteDoc(doc(db, "locations", id));
+      const res = await fetch(`/api/locations?id=${id}`, { method: "DELETE" });
+      const data = await res.json();
+      if (data.success) {
+        setLocations((prev) => prev.filter((l) => l.id !== id));
+        alert(`ลบจุดส่ง "${name}" สำเร็จ`);
+      } else {
+        alert(data.error || "Failed to delete location");
       }
-      setLocations((prev) => prev.filter((l) => l.id !== id));
-      alert(`ลบจุดส่ง "${name}" สำเร็จ`);
     } catch (e: any) {
       alert("Error: " + e.message);
     }
@@ -1806,23 +1926,25 @@ export default function AdminClient({
         isActive: locIsActive,
       };
 
-      const locId = editingLocationId || `loc-${Date.now()}`;
-      const locationDoc = {
-        ...payload,
-        id: locId,
-        updatedAt: new Date().toISOString(),
-      };
-      if (db) {
-        await setDoc(doc(db, "locations", locId), locationDoc, { merge: true });
-      }
-
-      setLocations((prev) => {
-        const exists = prev.some((l) => l.id === locId);
-        if (exists) {
-          return prev.map((l) => (l.id === locId ? (locationDoc as any) : l));
-        }
-        return [...prev, (locationDoc as any)];
+      const res = await fetch("/api/locations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
       });
+
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error);
+
+      // Immediately update local UI state so image & details update with zero delay
+      if (data.location) {
+        setLocations((prev) => {
+          const exists = prev.some((l) => l.id === data.location.id);
+          if (exists) {
+            return prev.map((l) => (l.id === data.location.id ? data.location : l));
+          }
+          return [...prev, data.location];
+        });
+      }
 
       alert(editingLocationId ? `แก้ไขจุดส่ง "${locName}" สำเร็จ!` : `เพิ่มจุดส่ง "${locName}" สำเร็จ!`);
       setShowLocationModal(false);
@@ -2440,39 +2562,49 @@ export default function AdminClient({
     )}
   </div>
 
-  {/* Collapsible Google Cloud Functions 2nd Gen & Serverless Backend Card */}
+  {/* Collapsible Vercel Hosting & Fast Origin Transfer Quota Card */}
   <div className="rounded-2xl border border-slate-200 bg-white shadow-2xs overflow-hidden transition-all">
     {/* Header Bar */}
     <div
-      onClick={() => setIsFunctionsPaneOpen((prev) => !prev)}
+      onClick={() => {
+        setIsVercelPaneOpen((prev) => !prev);
+        if (!vercelStatus) fetchVercelStatus();
+      }}
       className="p-3.5 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 cursor-pointer hover:bg-slate-50/80 transition-colors"
     >
       <div className="flex items-center gap-3">
-        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-600 text-white shrink-0 font-black text-sm shadow-xs">
-          ⚡
+        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-black text-white shrink-0 font-black text-sm shadow-xs">
+          ▲
         </div>
         <div>
           <div className="flex flex-wrap items-center gap-1.5">
-            <span className="rounded-md px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wider border bg-emerald-50 text-emerald-900 border-emerald-200">
-              Active • 2nd Gen
+            <span
+              className={`rounded-md px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wider border ${
+                vercelStatus?.quota?.status === "warning"
+                  ? "bg-amber-50 text-amber-900 border-amber-300"
+                  : "bg-emerald-50 text-emerald-900 border-emerald-200"
+              }`}
+            >
+              {vercelStatus?.quota?.status === "warning" ? "⚠️ 75% Used" : "Normal"}
             </span>
             <span className="rounded-md bg-slate-100 text-slate-800 border border-slate-200 px-2 py-0.5 text-[10px] font-bold">
-              Region: us-central1
-            </span>
-            <span className="rounded-md bg-blue-50 text-blue-800 border border-blue-200 px-2 py-0.5 text-[10px] font-bold">
-              Node.js 22
+              Team: {vercelStatus?.team?.slug || "vt-9cbe"}
             </span>
             <span className="text-xs font-black text-slate-900 ml-1">
-              Google Cloud Functions (Serverless Backend)
+              Vercel Fast Origin Transfer &amp; Hosting
             </span>
           </div>
           <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-slate-500 mt-0.5">
             <span>
-              ฟังก์ชันใช้งาน: <strong className="text-blue-700 font-bold">2 ฟังก์ชัน</strong> (ThaiLLM Proxy &amp; LINE Push)
+              โควตาฟรี:{" "}
+              <strong className="text-amber-700 font-bold">
+                ~7.5 GB / 10.0 GB
+              </strong>{" "}
+              (เหลืออีก ~2.5 GB)
             </span>
             <span>•</span>
             <span>
-              สถาปัตยกรรม: <strong className="text-emerald-700">100% Serverless (Zero Host Daemon)</strong>
+              สถานะ: <strong className="text-emerald-700">{vercelStatus?.project?.latestDeployState || "READY"}</strong> ({vercelStatus?.project?.name || "one-order-2"})
             </span>
           </div>
         </div>
@@ -2483,24 +2615,22 @@ export default function AdminClient({
           type="button"
           onClick={(e) => {
             e.stopPropagation();
-            handlePingFunctions();
+            fetchVercelStatus();
           }}
-          disabled={testingFunctions}
-          className="rounded-xl border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-bold text-blue-700 hover:bg-blue-100 shadow-2xs flex items-center gap-1 cursor-pointer"
-          title="ทดสอบยิง Ping Cloud Function"
+          disabled={loadingVercel}
+          className="rounded-xl border border-slate-300 bg-white px-2.5 py-1 text-xs font-bold text-slate-700 hover:bg-slate-50 shadow-2xs flex items-center gap-1 cursor-pointer"
+          title="รีเฟรชข้อมูล Vercel"
         >
           <RefreshCw
-            className={`h-3 w-3 text-blue-700 ${testingFunctions ? "animate-spin" : ""}`}
+            className={`h-3 w-3 text-slate-700 ${loadingVercel ? "animate-spin" : ""}`}
           />
-          <span className="hidden sm:inline">
-            {testingFunctions ? "กำลัง Ping..." : "ทดสอบ Ping ฟังก์ชัน"}
-          </span>
+          <span className="hidden sm:inline">รีเฟรช</span>
         </button>
         <span className="text-xs font-bold text-slate-800 bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded-xl border border-slate-200 transition-colors flex items-center gap-1">
-          <span>{isFunctionsPaneOpen ? "ย่อเก็บ" : "ขยายดูรายละเอียด"}</span>
+          <span>{isVercelPaneOpen ? "ย่อเก็บ" : "ขยายดูรายละเอียด"}</span>
           <ChevronDown
             className={`h-3.5 w-3.5 transition-transform duration-200 ${
-              isFunctionsPaneOpen ? "rotate-180" : ""
+              isVercelPaneOpen ? "rotate-180" : ""
             }`}
           />
         </span>
@@ -2508,71 +2638,89 @@ export default function AdminClient({
     </div>
 
     {/* Expanded Content */}
-    {isFunctionsPaneOpen && (
+    {isVercelPaneOpen && (
       <div className="border-t border-slate-200 p-4 sm:p-5 space-y-4 bg-slate-50/40">
-        {/* Architecture Note */}
-        <div className="rounded-xl border border-blue-200 bg-blue-50/80 p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-blue-950">
+        {/* Warning Banner */}
+        <div className="rounded-xl border border-amber-300 bg-amber-50/90 p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-amber-950">
           <div className="space-y-0.5">
-            <div className="font-black text-blue-900 flex items-center gap-1.5">
-              <span>🚀</span>
-              <span>Fully Serverless Architecture on Google Cloud Platform</span>
+            <div className="font-black text-amber-900 flex items-center gap-1.5">
+              <span>⚠️</span>
+              <span>Fast Origin Transfer ใช้ไป 75% (7.5 GB จาก 10.0 GB)</span>
             </div>
-            <p className="text-[11px] text-blue-800 leading-relaxed">
-              vEATec ย้ายจาก Server Daemon บนเครื่อง local ไปรันบน <strong>Google Cloud Functions 2nd Gen (Node.js 22)</strong> ทั้งหมด ทำให้เว็บสถิติบอร์ด VISTEC Apache ไม่จำเป็นต้องเปิดรันเซิร์ฟเวอร์ทิ้งไว้ และส่งแจ้งเตือน LINE เฉพาะตอนจำเป็นอย่างแม่นยำ
+            <p className="text-[11px] text-amber-800 leading-relaxed">
+              *เราได้ปรับปรุงระบบ <strong>Client-side Image Resize</strong> ลดขนาดรูปภาพสลิปและ QR Code ลงเหลือ ~40-50 KB และเปิด <strong>CDN Immutable Caching</strong> เพื่อหยุดการกิน Bandwidth เพิ่มเติมแล้ว
             </p>
           </div>
           <div className="flex items-center gap-2 shrink-0">
             <a
-              href="https://console.cloud.google.com/functions/list?project=one-order-af750"
+              href="https://vercel.com/vt-9cbe/~/usage"
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 text-white hover:bg-blue-700 px-3 py-1.5 text-xs font-bold shadow-2xs transition-all"
+              className="inline-flex items-center gap-1.5 rounded-xl bg-black text-white hover:bg-slate-800 px-3 py-1.5 text-xs font-bold shadow-2xs transition-all"
             >
-              <span>เปิดดู GCP Functions Console</span>
+              <span>เปิดดู Vercel Usage Tab</span>
               <ExternalLink className="h-3 w-3" />
             </a>
           </div>
         </div>
 
-        {/* Function Cards */}
-        <div className="grid gap-3 sm:grid-cols-2">
-          {/* Card 1: sendLineNotification */}
+        {/* Metric Cards */}
+        <div className="grid gap-3 sm:grid-cols-3">
+          {/* Card 1: Fast Origin Transfer */}
           <div className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-2xs space-y-2">
             <div className="flex items-center justify-between text-[11px] font-bold text-slate-500">
-              <span className="flex items-center gap-1.5">
-                <span className="h-2 w-2 rounded-full bg-emerald-500"></span>
-                LINE NOTIFICATION DISPATCHER
-              </span>
-              <span className="text-emerald-700 font-mono font-bold">2nd Gen</span>
+              <span>FAST ORIGIN TRANSFER</span>
+              <span className="text-amber-600 font-black">75%</span>
             </div>
-            <div className="text-base font-black text-slate-900 font-mono">
-              sendLineNotification
+            <div className="text-xl font-black text-slate-900 font-mono">
+              ~7.5 <span className="text-xs text-slate-500 font-normal">/ 10.0 GB</span>
             </div>
-            <p className="text-[11px] text-slate-600 leading-relaxed">
-              ฟังก์ชันบรอดแคสต์เข้า LINE กลุ่ม VISTEC โดยตรง ตรวจสอบและจำกัดความถี่ส่งเฉพาะตอนเปิดตี้ใหม่และข้าวมาส่งเท่านั้น (Zero Spam)
-            </p>
-            <div className="rounded-lg bg-slate-50 border border-slate-200 p-2 text-[10px] font-mono text-slate-600 break-all select-all">
-              https://us-central1-one-order-af750.cloudfunctions.net/sendLineNotification
+            <div className="h-2 w-full rounded-full bg-slate-100 overflow-hidden border border-slate-200">
+              <div
+                className="h-full bg-amber-500 rounded-full transition-all duration-500"
+                style={{ width: "75%" }}
+              />
+            </div>
+            <div className="text-[10px] text-slate-400">
+              โควตาฟรี 10 GB ต่อเดือน (รีเซ็ตทุก Billing Cycle)
             </div>
           </div>
 
-          {/* Card 2: thaillmProxy */}
-          <div className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-2xs space-y-2">
-            <div className="flex items-center justify-between text-[11px] font-bold text-slate-500">
-              <span className="flex items-center gap-1.5">
-                <span className="h-2 w-2 rounded-full bg-blue-500"></span>
-                THAI LLM INTELLIGENT PROXY
-              </span>
-              <span className="text-blue-700 font-mono font-bold">Cloud Run 2nd Gen</span>
+          {/* Card 2: Connected Project */}
+          <div className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-2xs space-y-1.5">
+            <div className="text-[11px] font-bold text-slate-500">PROJECT &amp; DEPLOYMENT</div>
+            <div className="text-base font-black text-slate-900 truncate">
+              {vercelStatus?.project?.name || "one-order-2"}
             </div>
-            <div className="text-base font-black text-slate-900 font-mono">
-              thaillmProxy
+            <div className="flex items-center gap-1.5 text-xs">
+              <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+              <span className="font-bold text-emerald-700 font-mono">{vercelStatus?.project?.latestDeployState || "READY"}</span>
+              <span className="text-slate-400 font-mono text-[11px]">({vercelStatus?.project?.nodeVersion || "Node 20.x"})</span>
             </div>
-            <p className="text-[11px] text-slate-600 leading-relaxed">
-              ฟังก์ชันเชื่อมต่อ OpenThaiGPT ThaiLLM สแกนคำผิด ปรับเมนูอาหารภาษาไทย และวิเคราะห์เมนูแนะนำ พร้อมตัวกรอง Thinking Tags แบบอัตโนมัติ
-            </p>
-            <div className="rounded-lg bg-slate-50 border border-slate-200 p-2 text-[10px] font-mono text-slate-600 break-all select-all">
-              https://thaillmproxy-onlcrhe4ea-uc.a.run.app
+            <div className="text-[10px] text-slate-500 truncate pt-0.5">
+              URL: <a href={`https://${vercelStatus?.project?.latestDeployUrl || "one-order-2.vercel.app"}`} target="_blank" rel="noopener noreferrer" className="text-purple-700 hover:underline font-mono">{vercelStatus?.project?.latestDeployUrl || "one-order-2.vercel.app"}</a>
+            </div>
+          </div>
+
+          {/* Card 3: Team Context */}
+          <div className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-2xs space-y-1.5">
+            <div className="text-[11px] font-bold text-slate-500">VERCEL TEAM CONTEXT</div>
+            <div className="text-base font-black text-slate-900 font-mono truncate">
+              {vercelStatus?.team?.slug || "vt-9cbe"}
+            </div>
+            <div className="text-xs text-slate-600 font-medium">
+              Plan: <span className="font-bold text-slate-900">{vercelStatus?.team?.plan || "Hobby"}</span>
+            </div>
+            <div className="pt-1">
+              <a
+                href="https://vercel.com/vt-9cbe/~/settings/billing"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-[11px] text-purple-700 hover:underline font-bold flex items-center gap-1"
+              >
+                <span>ดูรอบบิลและวันรีเซ็ตใน Billing</span>
+                <ExternalLink className="h-2.5 w-2.5" />
+              </a>
             </div>
           </div>
         </div>
@@ -3328,18 +3476,20 @@ export default function AdminClient({
           </button>
 
           <button
-            onClick={() => {
-              setActiveTab("promos");
-              fetchAdminPromoCards();
-            }}
+            onClick={() => setActiveTab("line_bridge")}
             className={`pb-3 px-3.5 text-sm font-bold border-b-2 transition-colors whitespace-nowrap flex items-center gap-2 cursor-pointer ${
-              activeTab === "promos"
+              activeTab === "line_bridge"
                 ? "border-purple-800 text-purple-900"
                 : "border-transparent text-gray-500 hover:text-gray-800"
             }`}
           >
-            <Sparkles className="h-4 w-4 text-purple-600" />
-            <span>การ์ดโฆษณา & ทริค ({adminPromoCards.length})</span>
+            <Radio className="h-4 w-4 text-emerald-600" />
+            <span>กระดานข้อความชุมชน (LINE Bridge)</span>
+            {bridgeLogs.length > 0 && (
+              <span className="text-[10px] bg-emerald-600 text-white font-bold px-1.5 py-0.2 rounded-full">
+                {bridgeLogs.length}
+              </span>
+            )}
           </button>
         </div>
 
@@ -3838,7 +3988,7 @@ export default function AdminClient({
                     <div className="relative h-32 w-full rounded-xl overflow-hidden bg-gray-100 border border-gray-200">
                       {loc.photoUrl ? (
                         <img
-                          src={resolveImageUrl(loc.photoUrl) || ""}
+                          src={loc.photoUrl}
                           alt={loc.name}
                           className="h-full w-full object-cover"
                         />
@@ -4538,449 +4688,7 @@ export default function AdminClient({
           </div>
         )}
 
-        {/* ========================================================= */}
-        {/* TAB 7: PROMOTIONAL / ADS / TUTORIAL CARDS */}
-        {/* ========================================================= */}
-        {activeTab === "promos" && (
-          <div className="space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div>
-                <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-                  <Sparkles className="h-5 w-5 text-purple-600" />
-                  <span>จัดการการ์ดแนะนำ & โฆษณาด้านล่าง (Discovery Scroller)</span>
-                </h2>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  การ์ดรูปภาพที่แสดงผลด้านล่างสุดของเว็บ ผู้ใช้สามารถเลื่อนดูและกดคลิกได้ (รองรับกำหนดวันเริ่ม-สิ้นสุด, ลิงก์, หรือ Modal ข้อความ)
-                </p>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={fetchAdminPromoCards}
-                  disabled={loadingPromoCards}
-                  className="inline-flex items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-bold text-gray-700 hover:bg-gray-50 transition-colors shadow-2xs cursor-pointer disabled:opacity-50"
-                >
-                  <RefreshCw className={`h-3.5 w-3.5 ${loadingPromoCards ? "animate-spin text-purple-600" : ""}`} />
-                  <span>รีเฟรช</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() =>
-                    setEditingPromoCard({
-                      id: `promo_${Date.now()}`,
-                      title: "",
-                      subtitle: "",
-                      badge: "ทริค",
-                      imageUrl: "",
-                      actionType: "modal",
-                      modalContent: "",
-                      actionUrl: "",
-                      isActive: true,
-                      order: adminPromoCards.length,
-                    })
-                  }
-                  className="inline-flex items-center gap-1.5 rounded-xl bg-purple-900 hover:bg-purple-800 text-white px-3.5 py-2 text-xs font-bold transition-colors shadow-2xs cursor-pointer"
-                >
-                  <Plus className="h-4 w-4" />
-                  <span>เพิ่มการ์ดใหม่</span>
-                </button>
-              </div>
-            </div>
-
-            {promoMessage && (
-              <div
-                className={`p-3 rounded-xl text-xs font-bold flex items-center justify-between ${
-                  promoMessage.type === "success"
-                    ? "bg-emerald-50 text-emerald-800 border border-emerald-200"
-                    : "bg-rose-50 text-rose-800 border border-rose-200"
-                }`}
-              >
-                <span>{promoMessage.text}</span>
-                <button type="button" onClick={() => setPromoMessage(null)}>
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-            )}
-
-            {loadingPromoCards ? (
-              <div className="p-8 text-center text-xs text-gray-500">
-                <div className="h-6 w-6 animate-spin rounded-full border-2 border-purple-800 border-t-transparent mx-auto mb-2" />
-                กำลังโหลดการ์ด...
-              </div>
-            ) : adminPromoCards.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-gray-300 p-8 text-center text-xs text-gray-500 space-y-2">
-                <p>ยังไม่มีการ์ดที่สร้างเองในระบบ (กำลังแสดงชุดตัวอย่างเริ่มต้น 4 ใบ)</p>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setEditingPromoCard({
-                      id: `promo_${Date.now()}`,
-                      title: "ตัวอย่าง: เมนูแนะนำสัปดาห์นี้",
-                      subtitle: "แวะสั่งร้านป้าต่ายหรือต้มเลือดหมู รวมตี้ส่งฟรี M4",
-                      badge: "แนะนำ",
-                      imageUrl: "/veatec-logo.png",
-                      actionType: "modal",
-                      modalContent: "รายละเอียดโปรโมชั่นหรือคำแนะนำ...",
-                      isActive: true,
-                      order: 0,
-                    })
-                  }
-                  className="inline-flex items-center gap-1 rounded-xl bg-purple-900 text-white px-3 py-1.5 font-bold hover:bg-purple-800"
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                  สร้างการ์ดแรกเลย
-                </button>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {adminPromoCards.map((card) => {
-                  const displayImg = resolveImageUrl(card.imageUrl);
-                  return (
-                    <div
-                      key={card.id}
-                      className="rounded-2xl border border-gray-200 bg-white overflow-hidden shadow-xs flex flex-col justify-between"
-                    >
-                      <div>
-                        <div className="relative w-full aspect-[16/9] bg-slate-900 overflow-hidden">
-                          {displayImg ? (
-                            <img
-                              src={displayImg}
-                              alt={card.title}
-                              className="w-full h-full object-cover"
-                            />
-                          ) : (
-                            <div className="flex items-center justify-center h-full text-xs text-gray-400">
-                              ไม่มีรูปภาพ
-                            </div>
-                          )}
-                          {card.badge && (
-                            <span className="absolute top-2 left-2 text-[10px] font-black bg-purple-600 text-white px-2 py-0.5 rounded-full shadow-xs">
-                              {card.badge}
-                            </span>
-                          )}
-                          <span
-                            className={`absolute top-2 right-2 text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                              card.isActive
-                                ? "bg-emerald-500 text-white"
-                                : "bg-gray-500 text-white"
-                            }`}
-                          >
-                            {card.isActive ? "เปิดใช้งาน" : "ปิดชั่วคราว"}
-                          </span>
-                        </div>
-
-                        <div className="p-3.5 space-y-1">
-                          <h4 className="text-xs font-bold text-gray-900 line-clamp-1">
-                            {card.title}
-                          </h4>
-                          <p className="text-[11px] text-gray-500 line-clamp-2">
-                            {card.subtitle || "-"}
-                          </p>
-
-                          <div className="pt-2 text-[10px] text-gray-400 space-y-0.5">
-                            <div>ประเภทแอ็กชัน: <strong className="text-gray-700">{card.actionType}</strong></div>
-                            {(card.startDate || card.endDate) && (
-                              <div>
-                                วันที่: {card.startDate || "เริ่มทันที"} ➔ {card.endDate || "ไม่จำกัด"}
-                              </div>
-                            )}
-                            <div>ลำดับ: {card.order ?? 0}</div>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="p-3 border-t border-gray-100 bg-gray-50/50 flex items-center justify-end gap-2">
-                        <button
-                          type="button"
-                          onClick={() => setEditingPromoCard(card)}
-                          className="inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-2.5 py-1 text-xs font-bold text-gray-700 hover:bg-gray-100 transition-colors"
-                        >
-                          <Edit className="h-3 w-3" />
-                          แก้ไข
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            if (!confirm(`ต้องการลบการ์ด "${card.title}" หรือไม่?`)) return;
-                            try {
-                              if (isFirebaseConfigured && db) {
-                                await deleteDoc(doc(db, "promo_cards", card.id));
-                              }
-                              setPromoMessage({ type: "success", text: "ลบการ์ดเรียบร้อยแล้ว" });
-                              fetchAdminPromoCards();
-                            } catch (e: any) {
-                              setPromoMessage({ type: "error", text: e.message });
-                            }
-                          }}
-                          className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1 text-xs font-bold text-rose-700 hover:bg-rose-100 transition-colors"
-                        >
-                          <Trash2 className="h-3 w-3" />
-                          ลบ
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
-
       </main>
-
-      {/* ========================================================= */}
-      {/* MODAL 7: EDIT / ADD PROMO CARD */}
-      {/* ========================================================= */}
-      {editingPromoCard && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 overflow-y-auto">
-          <div className="relative w-full max-w-lg rounded-3xl border border-gray-200 bg-white p-6 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between border-b border-gray-100 pb-3">
-              <h3 className="text-base font-black text-gray-900 flex items-center gap-2">
-                <Sparkles className="h-5 w-5 text-purple-600" />
-                <span>{editingPromoCard.id && adminPromoCards.some((c) => c.id === editingPromoCard.id) ? "แก้ไขการ์ด" : "เพิ่มการ์ดใหม่"}</span>
-              </h3>
-              <button
-                type="button"
-                onClick={() => setEditingPromoCard(null)}
-                className="w-7 h-7 rounded-full bg-gray-100 hover:bg-gray-200 text-gray-600 flex items-center justify-center cursor-pointer"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-
-            <form
-              onSubmit={async (e) => {
-                e.preventDefault();
-                if (!editingPromoCard.title) {
-                  alert("กรุณากรอกหัวข้อการ์ด");
-                  return;
-                }
-                const cardId = editingPromoCard.id || `promo_${Date.now()}`;
-                const payload: PromoCard = {
-                  id: cardId,
-                  title: editingPromoCard.title.trim(),
-                  subtitle: editingPromoCard.subtitle?.trim() || "",
-                  badge: editingPromoCard.badge?.trim() || "",
-                  imageUrl: editingPromoCard.imageUrl?.trim() || "",
-                  actionType: (editingPromoCard.actionType as any) || "modal",
-                  actionUrl: editingPromoCard.actionUrl?.trim() || "",
-                  modalContent: editingPromoCard.modalContent || "",
-                  modalImageUrl: editingPromoCard.modalImageUrl?.trim() || "",
-                  startDate: editingPromoCard.startDate || "",
-                  endDate: editingPromoCard.endDate || "",
-                  isActive: editingPromoCard.isActive ?? true,
-                  order: Number(editingPromoCard.order ?? 0),
-                  createdAt: editingPromoCard.createdAt || new Date().toISOString(),
-                  updatedAt: new Date().toISOString(),
-                };
-
-                try {
-                  if (isFirebaseConfigured && db) {
-                    await setDoc(doc(db, "promo_cards", cardId), payload);
-                  }
-                  setPromoMessage({ type: "success", text: "บันทึกการ์ดเรียบร้อยแล้ว!" });
-                  setEditingPromoCard(null);
-                  fetchAdminPromoCards();
-                } catch (err: any) {
-                  alert("บันทึกไม่สำเร็จ: " + err.message);
-                }
-              }}
-              className="space-y-3.5"
-            >
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-gray-800">หัวข้อการ์ด (Title) *</label>
-                  <input
-                    type="text"
-                    required
-                    value={editingPromoCard.title || ""}
-                    onChange={(e) => setEditingPromoCard({ ...editingPromoCard, title: e.target.value })}
-                    placeholder="เช่น วิธีสั่งอาหารใน 3 สเต็ป"
-                    className="w-full rounded-xl border border-gray-300 bg-white p-2.5 text-xs font-medium text-gray-900 focus:border-purple-600 focus:outline-none focus:ring-1 focus:ring-purple-600 shadow-2xs"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-gray-800">ป้ายกำกับ (Badge)</label>
-                  <input
-                    type="text"
-                    value={editingPromoCard.badge || ""}
-                    onChange={(e) => setEditingPromoCard({ ...editingPromoCard, badge: e.target.value })}
-                    placeholder="เช่น คู่มือ, แนะนำ, ข่าว"
-                    className="w-full rounded-xl border border-gray-300 bg-white p-2.5 text-xs font-medium text-gray-900 focus:border-purple-600 focus:outline-none focus:ring-1 focus:ring-purple-600 shadow-2xs"
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-xs font-bold text-gray-800">คำอธิบายย่อ (Subtitle)</label>
-                <textarea
-                  rows={2}
-                  value={editingPromoCard.subtitle || ""}
-                  onChange={(e) => setEditingPromoCard({ ...editingPromoCard, subtitle: e.target.value })}
-                  placeholder="คำอธิบายสั้นๆ 1-2 ประโยค..."
-                  className="w-full rounded-xl border border-gray-300 bg-white p-2.5 text-xs font-medium text-gray-900 focus:border-purple-600 focus:outline-none focus:ring-1 focus:ring-purple-600 shadow-2xs"
-                />
-              </div>
-
-              {/* Image Upload through Firebase Storage */}
-              <div className="space-y-1.5 p-3 rounded-2xl border border-purple-200 bg-purple-50/60">
-                <label className="text-xs font-bold text-purple-950 flex items-center justify-between">
-                  <span>รูปภาพการ์ด (Firebase Storage)</span>
-                  {uploadingPromoImg && (
-                    <span className="text-[10px] text-purple-700 font-bold">กำลังอัปโหลด ({promoUploadProgress}%)...</span>
-                  )}
-                </label>
-
-                <div className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    value={editingPromoCard.imageUrl || ""}
-                    onChange={(e) => setEditingPromoCard({ ...editingPromoCard, imageUrl: e.target.value })}
-                    placeholder="URL รูป หรือกดปุ่มอัปโหลดรูปภาพ ➔"
-                    className="flex-1 rounded-xl border border-gray-300 bg-white p-2.5 text-xs font-medium text-gray-900 focus:border-purple-600 focus:outline-none focus:ring-1 focus:ring-purple-600 shadow-2xs"
-                  />
-                  <label className="cursor-pointer rounded-xl bg-purple-900 hover:bg-purple-800 text-white px-3.5 py-2.5 text-xs font-bold transition-colors shrink-0 shadow-2xs">
-                    <Camera className="h-4 w-4 inline mr-1" />
-                    <span>อัปโหลด</span>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={async (e) => {
-                        const file = e.target.files?.[0];
-                        if (!file) return;
-                        try {
-                          setUploadingPromoImg(true);
-                          const compressed = await compressImage(file, 1200, 0.85);
-                          const res = await uploadDirectToStorage("general", compressed, `promo_${Date.now()}.jpg`, (pct) => {
-                            setPromoUploadProgress(pct);
-                          });
-                          setEditingPromoCard((prev) => ({ ...prev, imageUrl: res.directUrl }));
-                        } catch (err: any) {
-                          alert("อัปโหลดไม่สำเร็จ: " + err.message);
-                        } finally {
-                          setUploadingPromoImg(false);
-                          setPromoUploadProgress(0);
-                        }
-                      }}
-                    />
-                  </label>
-                </div>
-              </div>
-
-              {/* Action Type */}
-              <div className="grid grid-cols-3 gap-2">
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-gray-800">เมื่อคลิกการ์ด (Action)</label>
-                  <select
-                    value={editingPromoCard.actionType || "modal"}
-                    onChange={(e) => setEditingPromoCard({ ...editingPromoCard, actionType: e.target.value as any })}
-                    className="w-full rounded-xl border border-gray-300 bg-white p-2.5 text-xs font-semibold text-gray-900 focus:border-purple-600 focus:outline-none focus:ring-1 focus:ring-purple-600 shadow-2xs"
-                  >
-                    <option value="modal">เปิดหน้าต่าง Modal</option>
-                    <option value="link">เปิดลิงก์ URL ภายนอก</option>
-                    <option value="open_board">เปิดตี้ใหม่ทันที</option>
-                  </select>
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-gray-800">ลำดับ (Order)</label>
-                  <input
-                    type="number"
-                    value={editingPromoCard.order ?? 0}
-                    onChange={(e) => setEditingPromoCard({ ...editingPromoCard, order: Number(e.target.value) })}
-                    className="w-full rounded-xl border border-gray-300 bg-white p-2.5 text-xs font-medium text-gray-900 focus:border-purple-600 focus:outline-none focus:ring-1 focus:ring-purple-600 shadow-2xs"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-gray-800">สถานะ</label>
-                  <select
-                    value={editingPromoCard.isActive ? "true" : "false"}
-                    onChange={(e) => setEditingPromoCard({ ...editingPromoCard, isActive: e.target.value === "true" })}
-                    className="w-full rounded-xl border border-gray-300 bg-white p-2.5 text-xs font-semibold text-gray-900 focus:border-purple-600 focus:outline-none focus:ring-1 focus:ring-purple-600 shadow-2xs"
-                  >
-                    <option value="true">เปิดใช้งาน</option>
-                    <option value="false">ปิดชั่วคราว</option>
-                  </select>
-                </div>
-              </div>
-
-              {editingPromoCard.actionType === "link" && (
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-gray-800">URL ปลายทาง (Action Link)</label>
-                  <input
-                    type="url"
-                    value={editingPromoCard.actionUrl || ""}
-                    onChange={(e) => setEditingPromoCard({ ...editingPromoCard, actionUrl: e.target.value })}
-                    placeholder="https://..."
-                    className="w-full rounded-xl border border-gray-300 bg-white p-2.5 text-xs font-medium text-gray-900 focus:border-purple-600 focus:outline-none focus:ring-1 focus:ring-purple-600 shadow-2xs"
-                  />
-                </div>
-              )}
-
-              {editingPromoCard.actionType === "modal" && (
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between">
-                    <label className="text-xs font-bold text-gray-800">เนื้อหาในหน้าต่าง Popup (รองรับ HTML / Markdown)</label>
-                    <span className="text-[10px] text-purple-700 font-semibold">รองรับ &lt;b&gt;, &lt;p&gt;, &lt;a&gt;, &lt;ul&gt;, &lt;img&gt;</span>
-                  </div>
-                  <textarea
-                    rows={4}
-                    value={editingPromoCard.modalContent || ""}
-                    onChange={(e) => setEditingPromoCard({ ...editingPromoCard, modalContent: e.target.value })}
-                    placeholder="ใส่ข้อความ หรือ HTML เช่น <p>โปรโมชั่นพิเศษ <b>ลด 10%</b></p> หรือ <a href='...'>กดที่นี่</a>"
-                    className="w-full rounded-xl border border-gray-300 bg-white p-2.5 text-xs font-medium text-gray-900 focus:border-purple-600 focus:outline-none focus:ring-1 focus:ring-purple-600 shadow-2xs font-mono"
-                  />
-                </div>
-              )}
-
-              {/* Start & End Dates */}
-              <div className="grid grid-cols-2 gap-3 pt-1 border-t border-gray-100">
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-gray-800">วันเริ่มแสดง (Start Date)</label>
-                  <input
-                    type="date"
-                    value={editingPromoCard.startDate?.slice(0, 10) || ""}
-                    onChange={(e) => setEditingPromoCard({ ...editingPromoCard, startDate: e.target.value })}
-                    className="w-full rounded-xl border border-gray-300 bg-white p-2.5 text-xs font-medium text-gray-900 focus:border-purple-600 focus:outline-none focus:ring-1 focus:ring-purple-600 shadow-2xs"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-gray-800">วันสิ้นสุด (End Date)</label>
-                  <input
-                    type="date"
-                    value={editingPromoCard.endDate?.slice(0, 10) || ""}
-                    onChange={(e) => setEditingPromoCard({ ...editingPromoCard, endDate: e.target.value })}
-                    className="w-full rounded-xl border border-gray-300 bg-white p-2.5 text-xs font-medium text-gray-900 focus:border-purple-600 focus:outline-none focus:ring-1 focus:ring-purple-600 shadow-2xs"
-                  />
-                </div>
-              </div>
-
-              <div className="pt-3 border-t border-gray-100 flex items-center justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setEditingPromoCard(null)}
-                  className="rounded-xl border border-gray-300 px-4 py-2 text-xs font-bold text-gray-700 hover:bg-gray-100 transition-colors"
-                >
-                  ยกเลิก
-                </button>
-                <button
-                  type="submit"
-                  className="rounded-xl bg-purple-900 hover:bg-purple-800 text-white px-5 py-2 text-xs font-bold transition-colors shadow-md"
-                >
-                  บันทึกลงฐานข้อมูล
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
 
       {/* ========================================================= */}
       {/* MODAL 6: EDIT SANITIZED MENU NAME */}
@@ -5056,6 +4764,240 @@ export default function AdminClient({
                 💾 บันทึกการแก้ไข
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* TAB 7: COMMUNITY LINE BRIDGE & COLLABORATIVE NOTICES */}
+      {/* ========================================================= */}
+      {activeTab === "line_bridge" && (
+        <div className="space-y-6">
+          {/* Header & Concept Explanation */}
+          <div className="rounded-3xl border border-emerald-100 bg-gradient-to-br from-emerald-50/60 via-white to-teal-50/40 p-6 shadow-xs">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <div className="p-2 rounded-xl bg-emerald-600 text-white shadow-xs">
+                    <Radio className="h-5 w-5" />
+                  </div>
+                  <h2 className="text-lg font-black text-gray-900">
+                    กระดานข้อความชุมชน (Community Bridge)
+                  </h2>
+                  <span className="rounded-full bg-emerald-100 text-emerald-800 text-[11px] font-bold px-2.5 py-0.5">
+                    เชื่อมต่อสด 24 ชม.
+                  </span>
+                </div>
+                <p className="text-xs text-gray-600">
+                  รับฟังข่าวสาร ประกาศรอบส่งอาหาร และข้อความช่วยสั่งจากกลุ่ม LINE อัตโนมัติ พร้อมระบบคุ้มครองความเป็นส่วนตัวแบบสุภาพ (Ethical Privacy Masking)
+                </p>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <div className="text-right">
+                  <span className="text-[10px] uppercase font-bold text-gray-400 block tracking-wider">
+                    ข้อความที่ได้รับทั้งหมด
+                  </span>
+                  <span className="text-xl font-black text-emerald-950 font-mono">
+                    {bridgeLogs.length} รายการ
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Privacy & Owner Verification Badges */}
+            <div className="mt-4 pt-4 border-t border-emerald-100/80 flex flex-wrap items-center gap-4 text-xs text-gray-600">
+              <div className="flex items-center gap-1.5 font-medium">
+                <ShieldCheck className="h-4 w-4 text-emerald-600" />
+                <span>การคุ้มครองข้อมูล: <strong>ปิดบังชื่อคงเหลือ 4 ตัวอักษรแรก (e.g. ทัศน***, Andr***)</strong></span>
+              </div>
+              <div className="flex items-center gap-1.5 font-medium">
+                <CheckCircle2 className="h-4 w-4 text-blue-600" />
+                <span>ผู้ประกาศที่ผ่านการตรวจสอบ: <strong>แชมป์ขั้นเทพ1639 (ร้านแชมป์)</strong></span>
+              </div>
+            </div>
+          </div>
+
+          {/* Section 1: Tracked Community Orders */}
+          <div className="rounded-3xl border border-gray-200 bg-white p-6 shadow-xs space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-base font-black text-gray-900 flex items-center gap-2">
+                  <ShoppingBag className="h-5 w-5 text-purple-700" />
+                  <span>รายการอาหารที่เพื่อนๆ สั่งในกลุ่ม ({bridgeOrders.length})</span>
+                </h3>
+                <p className="text-xs text-gray-500">
+                  ตรวจพบจากข้อความสั่งซื้อของสมาชิกในกลุ่ม ช่วยให้เห็นเมนูยอดนิยมและความต้องการแบบเรียลไทม์
+                </p>
+              </div>
+            </div>
+
+            {bridgeOrders.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-gray-200 p-8 text-center text-gray-400 space-y-2">
+                <ShoppingBag className="h-8 w-8 mx-auto opacity-40" />
+                <p className="text-xs font-bold text-gray-500">ยังไม่มีรายการสั่งอาหารจากกลุ่ม LINE ในขณะนี้</p>
+                <p className="text-[11px] text-gray-400">เมื่อมีสมาชิกในกลุ่มพิมพ์สั่ง เช่น &quot;ข้าวหน้าเป็ดย่าง 2 ห่อ&quot; รายการจะมาแสดงที่นี่ทันที</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-gray-50 text-gray-500 font-bold border-b border-gray-100">
+                    <tr>
+                      <th className="py-2.5 px-3">เวลา</th>
+                      <th className="py-2.5 px-3">ผู้สั่ง (Masked)</th>
+                      <th className="py-2.5 px-3">ร้านค้า</th>
+                      <th className="py-2.5 px-3">รายการอาหารที่ระบุ</th>
+                      <th className="py-2.5 px-3">ข้อความในแชท</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 font-medium">
+                    {bridgeOrders.map((order) => (
+                      <tr key={order.id} className="hover:bg-gray-50/80 transition-colors">
+                        <td className="py-2.5 px-3 text-gray-500 whitespace-nowrap font-mono text-[11px]">
+                          {order.createdAt ? new Date(order.createdAt).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" }) : "-"} น.
+                        </td>
+                        <td className="py-2.5 px-3 whitespace-nowrap">
+                          <span className="font-bold text-gray-800 bg-gray-100 px-2 py-0.5 rounded-md font-mono">
+                            {order.userMaskedId || "ผู้ใช้ไม่ระบุ"}
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-3 whitespace-nowrap font-bold text-purple-900">
+                          {order.shopName || "ร้านอาหาร"}
+                        </td>
+                        <td className="py-2.5 px-3">
+                          <div className="flex flex-wrap gap-1.5">
+                            {order.orderItems && order.orderItems.length > 0 ? (
+                              order.orderItems.map((item: any, idx: number) => (
+                                <span
+                                  key={idx}
+                                  className="inline-flex items-center gap-1 rounded-lg bg-emerald-50 border border-emerald-200/60 px-2 py-0.5 text-emerald-800 font-bold"
+                                >
+                                  <span>{item.item}</span>
+                                  <span className="text-emerald-600 font-mono">x{item.qty || 1}</span>
+                                  {item.price && (
+                                    <span className="text-amber-700 font-mono text-[10px]">฿{item.price}</span>
+                                  )}
+                                </span>
+                              ))
+                            ) : (
+                              <span className="text-gray-400">-</span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="py-2.5 px-3 text-gray-500 max-w-xs truncate" title={order.rawText}>
+                          {order.rawText || "-"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* Section 2: Live Message Stream Feed */}
+          <div className="rounded-3xl border border-gray-200 bg-white p-6 shadow-xs space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-base font-black text-gray-900 flex items-center gap-2">
+                  <MessageSquare className="h-5 w-5 text-emerald-600" />
+                  <span>บันทึกการรับข้อความจากชุมชน (Live Activity Stream)</span>
+                </h3>
+                <p className="text-xs text-gray-500">
+                  แสดงข้อความเข้าจาก LINE groups พร้อมผลการจัดกลุ่มประเภทข้อความ
+                </p>
+              </div>
+
+              {loadingBridge && (
+                <div className="flex items-center gap-1.5 text-xs text-gray-400 font-medium">
+                  <RefreshCw className="h-3.5 w-3.5 animate-spin text-emerald-600" />
+                  <span>กำลังอัปเดตข้อมูล...</span>
+                </div>
+              )}
+            </div>
+
+            {bridgeLogs.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-gray-200 p-8 text-center text-gray-400 space-y-2">
+                <Radio className="h-8 w-8 mx-auto opacity-40 text-emerald-600" />
+                <p className="text-xs font-bold text-gray-500">กำลังรอรับสัญญาณข้อความแรกจากกลุ่ม LINE</p>
+                <p className="text-[11px] text-gray-400">เมื่อกลุ่มที่มี Bot เริ่มมีการพิมพ์สนทนา ข้อมูลจะสตรีมปรากฏที่นี่โดยอัตโนมัติ</p>
+              </div>
+            ) : (
+              <div className="space-y-2.5 max-h-[600px] overflow-y-auto pr-1">
+                {bridgeLogs.map((log) => {
+                  const isOwner = Boolean(log.isShopOwner);
+                  const intent = log.extracted?.intent || log.action || "MESSAGE";
+                  const intentColor =
+                    intent === "OPEN_ROUND"
+                      ? "bg-emerald-100 text-emerald-800 border-emerald-300"
+                      : intent === "EMERGENCY_STOP"
+                      ? "bg-red-100 text-red-800 border-red-300"
+                      : intent === "ORDER" || log.action === "ORDER_TRACKED"
+                      ? "bg-purple-100 text-purple-800 border-purple-300"
+                      : "bg-gray-100 text-gray-700 border-gray-200";
+
+                  const intentLabel =
+                    intent === "OPEN_ROUND"
+                      ? "📢 ประกาศรอบส่ง"
+                      : intent === "EMERGENCY_STOP"
+                      ? "⚠️ ปิดรอบเร่งด่วน"
+                      : intent === "ORDER" || log.action === "ORDER_TRACKED"
+                      ? "🍜 สั่งอาหาร"
+                      : "💬 ข้อความทั่วไป";
+
+                  return (
+                    <div
+                      key={log.id}
+                      className={`p-3.5 rounded-2xl border transition-all ${
+                        isOwner
+                          ? "bg-amber-50/60 border-amber-200"
+                          : "bg-gray-50/60 hover:bg-white border-gray-200/70"
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md border ${intentColor}`}>
+                              {intentLabel}
+                            </span>
+
+                            {isOwner ? (
+                              <span className="text-[11px] font-bold text-amber-900 bg-amber-100 px-2 py-0.5 rounded-md flex items-center gap-1">
+                                <span>👑 {log.userDisplayName || "เจ้าของร้านที่ยืนยันแล้ว"}</span>
+                              </span>
+                            ) : (
+                              <span className="text-[11px] font-bold text-gray-700 font-mono">
+                                {log.userDisplayName || log.userId || "สมาชิกในกลุ่ม"}
+                              </span>
+                            )}
+
+                            {log.extractionMethod && (
+                              <span className="text-[10px] font-mono text-gray-400">
+                                via {log.extractionMethod}
+                              </span>
+                            )}
+                          </div>
+
+                          <p className="text-xs text-gray-800 whitespace-pre-wrap font-sans mt-1">
+                            {log.text || "(ข้อความที่ไม่มีเนื้อหาอักษร)"}
+                          </p>
+
+                          {log.extracted?.reason && (
+                            <p className="text-[11px] text-red-600 font-medium">
+                              เหตุผลที่ระบุ: {log.extracted.reason}
+                            </p>
+                          )}
+                        </div>
+
+                        <span className="text-[10px] text-gray-400 whitespace-nowrap font-mono">
+                          {log.createdAt ? new Date(log.createdAt).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" }) : "-"} น.
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
       )}
