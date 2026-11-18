@@ -4866,10 +4866,12 @@ export default function AdminClient({
                   <table className="w-full text-left text-xs">
                     <thead className="bg-gray-50 text-gray-500 font-bold border-b border-gray-100">
                       <tr>
-                        <th className="py-2.5 px-3">เวลา</th>
+                        <th className="py-2.5 px-3">วัน-เวลา</th>
                         <th className="py-2.5 px-3">ผู้สั่ง (Masked)</th>
+                        <th className="py-2.5 px-3">จุดส่ง (Delivery Point)</th>
+                        <th className="py-2.5 px-3">รอบส่ง</th>
                         <th className="py-2.5 px-3">ร้านค้า</th>
-                        <th className="py-2.5 px-3">รายการอาหารที่ระบุ</th>
+                        <th className="py-2.5 px-3">รายการอาหารที่สั่ง & ยอด</th>
                         <th className="py-2.5 px-3">ข้อความในแชท</th>
                       </tr>
                     </thead>
@@ -4877,14 +4879,23 @@ export default function AdminClient({
                       {bridgeOrders.map((order) => (
                         <tr key={order.id} className="hover:bg-gray-50/80 transition-colors">
                           <td className="py-2.5 px-3 text-gray-500 whitespace-nowrap font-mono text-[11px]">
-                            {order.createdAt ? new Date(order.createdAt).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" }) : "-"} น.
+                            {order.createdAt ? new Date(order.createdAt).toLocaleString("th-TH", { dateStyle: "short", timeStyle: "short" }) : "-"} น.
                           </td>
                           <td className="py-2.5 px-3 whitespace-nowrap">
                             <span className="font-bold text-gray-800 bg-gray-100 px-2 py-0.5 rounded-md font-mono">
                               {order.userMaskedId || "ผู้ใช้ไม่ระบุ"}
                             </span>
                           </td>
-                          <td className="py-2.5 px-3 whitespace-nowrap font-bold text-purple-900">
+                          <td className="py-2.5 px-3 whitespace-nowrap">
+                            <span className="inline-flex items-center gap-1 font-bold text-purple-900 bg-purple-50 border border-purple-200/80 px-2 py-0.5 rounded-md">
+                              <MapPin className="h-3 w-3 text-purple-700" />
+                              <span>{order.deliveryPoint || "ตึก M4"}</span>
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-3 whitespace-nowrap text-gray-600 font-mono text-[11px]">
+                            {order.targetRound || "11:00 น."}
+                          </td>
+                          <td className="py-2.5 px-3 whitespace-nowrap font-bold text-gray-900">
                             {order.shopName || "ร้านอาหาร"}
                           </td>
                           <td className="py-2.5 px-3">
